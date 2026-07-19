@@ -122,7 +122,9 @@ function injuryProneOf(rosterP) {
 function maybeInjury(T, ctx) {
   for (const p of T.court) {
     if (p.out) continue;
-    const risk = 0.00028 * (1 + Math.max(0, p.fatigue - 22) * 0.045) * (p.prone || 1);
+    // 경기 감각이 낮을수록(안 뛰어서 녹슨 상태) 몸이 타이밍을 못 맞춰 부상 위험이 커진다 (감각 0 -> 최대 1.7배)
+    const rustRisk = 1 + Math.max(0, 70 - (p.sharpness ?? 70)) * 0.01;
+    const risk = 0.00028 * (1 + Math.max(0, p.fatigue - 22) * 0.045) * (p.prone || 1) * rustRisk;
     if (Math.random() >= risk) continue;
     const type = pickWeighted(INJURY_TYPES, (t) => t.w);
     const days = randomBetween(type.min, type.max);
@@ -157,17 +159,17 @@ function pickWeighted(items, weightFn) {
   return items[items.length - 1];
 }
 
-function makeMatchTeam(teamId, isHome) {
+function makeMatchTeam(teamId, isHome, dleague) {
   const idOf = (p) => p.playerId || p.name;
-  // 유저 팀 선발/로테이션 설정 (선수단 탭에서 저장)
+  // 유저 팀 선발/로테이션 설정 (선수단 탭에서 저장) — D리그 경기에는 1군 라인업 설정을 적용하지 않는다
   let cfg = null;
-  if (typeof state !== "undefined" && state && teamId === state.selectedTeamId
+  if (!dleague && typeof state !== "undefined" && state && teamId === state.selectedTeamId
       && state.lineupConfig && Array.isArray(state.lineupConfig.rotation) && state.lineupConfig.rotation.length >= 5) {
     cfg = state.lineupConfig;
   }
   // 유저 플레이타임 배분 (전술실에서 설정, 합계 200분 기준으로 정규화)
   let plan = null;
-  if (typeof state !== "undefined" && state && teamId === state.selectedTeamId && state.minutesPlan) {
+  if (!dleague && typeof state !== "undefined" && state && teamId === state.selectedTeamId && state.minutesPlan) {
     const sum = Object.values(state.minutesPlan).reduce((s, v) => s + (Number(v) || 0), 0);
     if (sum > 0) {
       const f = 200 / sum;
@@ -183,7 +185,8 @@ function makeMatchTeam(teamId, isHome) {
   const injMap = (typeof state !== "undefined" && state && state.injuries) || {};
   const condMap = (typeof state !== "undefined" && state && state.playerCondition) || {};
   const condOfP = (p) => { const v = condMap[p.playerId || p.name]; return v == null ? 100 : v; };
-  const fullRoster = rosterFor(teamId).filter((p) => {
+  const baseRoster = dleague && typeof dleagueRosterFor === "function" ? dleagueRosterFor(teamId) : rosterFor(teamId);
+  const fullRoster = baseRoster.filter((p) => {
     const inj = injMap[p.playerId || p.name];
     return !(inj && inj.daysLeft > 0);
   });
@@ -220,6 +223,7 @@ function makeMatchTeam(teamId, isHome) {
     foreign: String(p.playerId || "").startsWith("F"),
     stamina: attrOf(p, "체력", 72),
     cond,
+    sharpness: p.sharpness == null ? 70 : Number(p.sharpness),
     prone: injuryProneOf(p),
     // 히든 능력치 -> 경기 반영 (0~20, 10 = 평균)
     form: (Math.random() * 2 - 1) * 0.025 * (1 - hidOf(p, "꾸준함", 10) / 20), // 오늘의 폼: 꾸준함이 낮을수록 기복이 큼
@@ -518,6 +522,8 @@ function runPossession(T, D, ctx) {
   const dName = D.shortName || D.name;
   // 피로 페널티: 피로 20 초과분만큼 성공률 하락 (피로 45면 -10%)
   const fatigueFactor = (pl) => 1 - Math.max(0, pl.fatigue - 20) * 0.004;
+  // 경기 감각 페널티: 중립값(70) 밑으로 떨어진 만큼 성공률 하락 (감각 0이면 -35%). 안 뛰어서 녹슨 선수용.
+  const sharpnessFactor = (pl) => 1 - Math.max(0, 70 - (pl.sharpness ?? 70)) * 0.005;
   // 히든 멘탈 보정: 오늘의 폼(꾸준함) + 클러치 상황(강심장) + 플레이오프 무대(큰경기)
   const mentalAdj = (sh) => (sh.form || 0)
     + (ctx.lastMode === "clutch" ? (sh.clutch || 0) : 0)
@@ -771,7 +777,7 @@ function runPossession(T, D, ctx) {
         log(`${defender.name}${josa(defender.name, "이", "가")} 손끝으로 쳐냅니다! 3점 블록!`);
       } else {
         const p3 = Math.max(0.18, Math.min(0.47, 0.29 + (a("3점슛", 50) - 70) * 0.0042 - (dA("외곽수비", 55) - 70) * 0.0022 - Math.max(0, hDiff * -1) * 0.001 + homeEdge + shotAdj("three", shooter) + bAdj("three", shooter, defender) + mentalAdj(shooter)));
-        made = Math.random() < p3 * fatigueFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
+        made = Math.random() < p3 * fatigueFactor(shooter) * sharpnessFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
         if (made) shooter.tpm += 1;
         if (!made && Math.random() < 0.025) { ftAfter = 3; chargeFoul(D, foulTarget(def, defender), ctx); }
       }
@@ -801,7 +807,7 @@ function runPossession(T, D, ctx) {
         evPush({ t: "block", p: rimProt.id, defSide: true });
         log(rimProt === defender ? `${rimProt.name}${josa(rimProt.name, "이", "가")} 그대로 쳐냅니다! 블록!` : `헬프 온 ${rimProt.name}! 엄청난 블록이 나옵니다!`);
       } else {
-        made = Math.random() < pD * fatigueFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
+        made = Math.random() < pD * fatigueFactor(shooter) * sharpnessFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
         const pFoulD = Math.max(0.1, Math.min(0.38, 0.24 + (a("드라이빙레이업", 50) - 68) * 0.003));
         if (Math.random() < pFoulD * (made ? 0.35 : 1)) {
           chargeFoul(D, foulTarget(def, defender), ctx);
@@ -849,7 +855,7 @@ function runPossession(T, D, ctx) {
         evPush({ t: "block", p: blocker.id, defSide: true });
         log(pickPhrase([`${blocker.name}, 엄청난 블록! ${shooter.name}의 슛을 지워버립니다!`, `${blocker.name}${josa(blocker.name, "이", "가")} 통째로 걷어냅니다! 강력한 블록!`]));
       } else {
-        made = Math.random() < rimP * fatigueFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
+        made = Math.random() < rimP * fatigueFactor(shooter) * sharpnessFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
         const posFoulAdj = { PG: 0.07, SG: 0.06, SF: 0.02, PF: -0.02, C: -0.03 }[shooter.pos] || 0;
         const pFoul = Math.max(0.06, Math.min(0.34, 0.21 + ((a("드라이빙레이업", 50) + a("포스트컨트롤", 50)) / 2 - 68) * 0.0025 + posFoulAdj));
         if (Math.random() < pFoul * (made ? 0.35 : 1)) {
@@ -880,7 +886,7 @@ function runPossession(T, D, ctx) {
         log(`${defender.name}${josa(defender.name, "이", "가")} 그대로 쳐냅니다! 점퍼 블록!`);
       } else {
         const pM = Math.max(0.25, Math.min(0.55, 0.365 + (a("중거리슛", 55) - 70) * 0.004 - (dA("외곽수비", 55) - 70) * 0.002 + homeEdge + shotAdj("mid", shooter) + bAdj("mid", shooter, defender) + mentalAdj(shooter)));
-        made = Math.random() < pM * fatigueFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
+        made = Math.random() < pM * fatigueFactor(shooter) * sharpnessFactor(shooter) + (1 - fatigueFactor(defender)) * 0.04;
         if (!made && Math.random() < 0.02) { ftAfter = 2; shooter.fga -= 1; chargeFoul(D, foulTarget(def, defender), ctx); }
       }
     }
@@ -1103,9 +1109,9 @@ function toBoxTeam(T) {
     }));
 }
 
-function playMatch(homeId, awayId) {
-  const H = makeMatchTeam(homeId, true);
-  const A = makeMatchTeam(awayId, false);
+function playMatch(homeId, awayId, dleague) {
+  const H = makeMatchTeam(homeId, true, dleague);
+  const A = makeMatchTeam(awayId, false, dleague);
   const pbp = [];
   // KBL 규정: 전반 2회, 후반 3회, 연장 각 1회 추가 (런 발생 시 자동 작전타임에서 차감)
   const ctx = { scores: { home: 0, away: 0 }, pbp, q: 1, clock: "10:00", homeShort: H.shortName, awayShort: A.shortName, run: null, events: [], timeouts: { home: 2, away: 2 }, teams: { home: H, away: A }, playoff: typeof state !== "undefined" && state && state.phase === "playoff" };

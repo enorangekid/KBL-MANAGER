@@ -11,6 +11,29 @@ const teams = [
   { id: "samsung", name: "서울 삼성 썬더스", city: "서울", color: "#135aa3", colorName: "Samsung Blue", strength: 70 },
 ];
 
+// D리그(2군) 전용 팀. 1군 일정(10팀 라운드로빈)에는 영향 없이 별도로만 존재한다.
+// 상무 농구단은 로스터/육성 미구상 상태의 껍데기 — 로스터가 채워지기 전까지는 D리그 일정에도 포함하지 않는다.
+const DLEAGUE_EXTRA_TEAMS = [
+  { id: "sangmu", name: "상무 농구단", city: "상무", color: "#ecb143", colorName: "Sangmu Gold", strength: 60 },
+];
+
+// 수신함 발신처 — 내부 보고서(report)와 외부 언론 기사(article)로 성격이 나뉜다.
+// kind: "report" = 구단 내부 문서 톤(수신/발신/제목 형식), "article" = 언론 기사 톤(헤드라인/바이라인 형식)
+const NEWS_SENDERS = {
+  training: { label: "훈련 스탭", tag: "훈련 보고서", color: "#4f9dff", kind: "report" },
+  medical: { label: "의무팀", tag: "의무팀 보고서", color: "#ff5a5a", kind: "report" },
+  front: { label: "프런트진", tag: "구단 공지", color: "#9aa5b1", kind: "report" },
+  marketing: { label: "마케팅진", tag: "마케팅 리포트", color: "#ffa53d", kind: "report" },
+  scout: { label: "스카우트", tag: "스카우팅 리포트", color: "#57c07d", kind: "report" },
+  sportsnews: { label: "KBL 스포츠뉴스", tag: "속보", color: "#c084fc", kind: "article" },
+  press: { label: "언론사", tag: "기사", color: "#7fc5ff", kind: "article" },
+  reporter: { label: "취재수첩", tag: "칼럼", color: "#e0b84f", kind: "article" },
+};
+
+function newsMetaOf(sender) {
+  return NEWS_SENDERS[sender] || NEWS_SENDERS.front;
+}
+
 const rosterSeeds = {
   kcc: ["부산 에이스", "KCC 포인트가드", "이지스 슈터", "부산 포워드", "골밑 수호자", "식스맨 가드", "루키 윙", "백업 센터"],
   db: ["이선 알바노", "치나누 오누아쿠", "강상재", "김종규", "이용우", "오마리 스펠맨", "정효근", "박인웅"],
@@ -166,8 +189,31 @@ const defaultState = () => ({
   careerStats: {},     // 선수별 통산 누적 (완료된 시즌 합산)
   training: {},        // 선수별 훈련 배정 { off, def, phys[] }
   devGrowth: {},        // 선수별 훈련 성장 누적 { caGained, attrs: {key: delta} }
+  sharpness: {},        // 선수별 경기 감각 0~100 (미설정 시 중립값 70). 실전 출전으로 회복, 안 뛰면 매일 조금씩 하락
+  dleagueRoster: {},      // D리그로 설정된 선수 { [playerId]: true } — 해당 선수는 1군 로스터에서 제외됨
+  dleagueSchedule: buildDLeagueSchedule(),
+  dleagueStandings: Object.fromEntries(
+    teams.map((team) => [team.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }]),
+  ),
 
-  news: ["프런트가 새 시즌 운영 목표를 정리했습니다.", "스태프 회의에서 주전 로테이션 점검이 필요하다는 의견이 나왔습니다."],
+  bgTheme: "gray", // gray | team — 게임 화면 배경 테마 (BG 아이콘으로 전환)
+
+  // 수신함: 각 항목 { id, day, season, sender, title, body, read, priority, link }
+  news: [
+    {
+      id: "seed-1", day: 1, season: 1, sender: "front",
+      title: "시즌 운영 목표 정리", body: "프런트가 새 시즌 운영 목표를 정리했습니다.",
+      read: false, priority: "normal", link: null,
+    },
+    {
+      id: "seed-2", day: 1, season: 1, sender: "training",
+      title: "주전 로테이션 점검 필요", body: "스태프 회의에서 주전 로테이션 점검이 필요하다는 의견이 나왔습니다.",
+      read: false, priority: "normal", link: null,
+    },
+  ],
+  newsSeq: 2, // 수신함 항목 고유 id 발급용 카운터
+  inboxFilter: "all", // 탭바 필터: all | marketing | sportsnews | front | press | scout
+  selectedNewsId: null, // 수신함에서 현재 펼쳐 본 항목
   standings: Object.fromEntries(
     teams.map((team) => [team.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }]),
   ),
@@ -199,6 +245,30 @@ function buildSchedule() {
         let away = lineup[9 - k];
         if ((cycle + round + k) % 2 === 1) { const t = home; home = away; away = t; } // 홈/원정 분산
         games.push({ day, home, away, played: false, homeScore: null, awayScore: null });
+      }
+      rotation = [rotation[rotation.length - 1], ...rotation.slice(0, -1)];
+    }
+  }
+  return games;
+}
+
+// D리그(2군) 일정: 1군과 같은 10개 구단이 참가하는 별도 리그. 규모는 1군보다 작게 2회전(팀당 18경기)만 편성한다.
+// 상무 농구단은 아직 로스터가 없는 껍데기라 이 일정에는 포함하지 않는다.
+function buildDLeagueSchedule() {
+  const ids = teams.map((team) => team.id);
+  const fixed = ids[0];
+  let rotation = ids.slice(1);
+  const games = [];
+  let day = 3; // 1군과 날짜가 겹치지 않게 살짝 오프셋
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    for (let round = 0; round < 9; round += 1) {
+      day += 2 + (round % 3 === 0 ? 1 : 0);
+      const lineup = [fixed, ...rotation];
+      for (let k = 0; k < 5; k += 1) {
+        let home = lineup[k];
+        let away = lineup[9 - k];
+        if ((cycle + round + k) % 2 === 1) { const t = home; home = away; away = t; }
+        games.push({ day, home, away, played: false, homeScore: null, awayScore: null, dleague: true });
       }
       rotation = [rotation[rotation.length - 1], ...rotation.slice(0, -1)];
     }
@@ -242,7 +312,8 @@ function loadState() {
   if (!saved) return defaultState();
 
   try {
-    const loaded = { ...defaultState(), ...JSON.parse(saved) };
+    const parsedSave = JSON.parse(saved);
+    const loaded = { ...defaultState(), ...parsedSave };
     // 시즌 시스템 도입 전 세이브 마이그레이션: 구형 일정(270경기 미만)은 시즌 1로 재구성
     if (!loaded.season || !Array.isArray(loaded.schedule) || loaded.schedule.length < 270) {
       loaded.season = 1;
@@ -266,6 +337,35 @@ function loadState() {
     if (!loaded.careerStats) loaded.careerStats = {};
     if (!loaded.training) loaded.training = {};
     if (!loaded.devGrowth) loaded.devGrowth = {};
+    if (!loaded.sharpness) loaded.sharpness = {};
+    // 구형 수신함(문자열 배열 + unreadNewsCount 카운터) -> 객체 배열(+개별 read 플래그) 마이그레이션
+    if (!Array.isArray(loaded.news) || (loaded.news.length && typeof loaded.news[0] === "string")) {
+      const oldNews = Array.isArray(parsedSave.news) ? parsedSave.news : [];
+      const oldUnread = parsedSave.unreadNewsCount || 0;
+      loaded.news = oldNews.map((text, i) => ({
+        id: `legacy-${i}`,
+        day: loaded.day,
+        season: loaded.season,
+        sender: "front",
+        title: "구단 소식",
+        body: typeof text === "string" ? text : String(text),
+        read: i < oldNews.length - oldUnread,
+        priority: "normal",
+        link: null,
+      }));
+      loaded.newsSeq = oldNews.length;
+    }
+    if (!Number.isFinite(loaded.newsSeq)) loaded.newsSeq = loaded.news.length;
+    if (!loaded.inboxFilter) loaded.inboxFilter = "all";
+    if (loaded.selectedNewsId === undefined) loaded.selectedNewsId = null;
+    delete loaded.unreadNewsCount;
+    if (!loaded.dleagueRoster) loaded.dleagueRoster = {};
+    if (!Array.isArray(loaded.dleagueSchedule) || !loaded.dleagueSchedule.length) loaded.dleagueSchedule = buildDLeagueSchedule();
+    if (!loaded.dleagueStandings) {
+      loaded.dleagueStandings = Object.fromEntries(
+        teams.map((team) => [team.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }]),
+      );
+    }
     // 구형 훈련 배정(공격+수비+체력 동시 배정) -> 1개만 남기는 형식으로 마이그레이션
     Object.entries(loaded.training).forEach(([pid, plan]) => {
       if (plan && (plan.off || plan.def || Array.isArray(plan.phys))) {
@@ -286,50 +386,59 @@ function saveState() {
 }
 
 function teamById(id) {
-  return teams.find((team) => team.id === id);
+  return teams.find((team) => team.id === id) || DLEAGUE_EXTRA_TEAMS.find((team) => team.id === id);
 }
 
 function selectedTeam() {
   return teamById(state.selectedTeamId);
 }
 
+// 선수가 D리그로 설정됐는지 (1군 로스터에서 제외되고, D리그 로스터에만 포함됨)
+function isDLeaguePlayer(pid) {
+  return !!(state.dleagueRoster && state.dleagueRoster[pid]);
+}
+
+// 원본 선수 목록(list)을 포지션별 선발 + 벤치 순서로 정렬하고 게임에서 쓰는 필드로 매핑
+function buildRosterList(list) {
+  const used = new Set();
+  const starters = [];
+  for (const pos of positions) {
+    let pick = list.filter((p) => !used.has(p.id) && p.pos === pos).sort((a, b) => b.ovr - a.ovr)[0];
+    if (!pick) pick = list.filter((p) => !used.has(p.id) && p.subPos === pos).sort((a, b) => b.ovr - a.ovr)[0];
+    if (!pick) pick = list.filter((p) => !used.has(p.id)).sort((a, b) => b.ovr - a.ovr)[0];
+    if (pick) { used.add(pick.id); starters.push({ ...pick, slotPos: pos }); }
+  }
+  const bench = list.filter((p) => !used.has(p.id)).sort((a, b) => b.ovr - a.ovr);
+  return [...starters, ...bench].map((p, index) => ({
+    name: p.name,
+    playerId: p.id,
+    position: p.subPos ? `${p.pos}/${p.subPos}` : p.pos,
+    mainPosition: p.slotPos || p.pos,
+    ovr: p.ovr,
+    atk: p.atk,
+    def: p.def,
+    grade: p.grade,
+    age: ageAt(p.birth, p.age),
+    birth: p.birth,
+    height: p.height,
+    attrs: effectiveAttrs(p.id, p.attrs),
+    hidden: p.hidden,
+    role: index < 5 ? "주전" : "벤치",
+    form: p.ovr,
+    condition: Math.round(conditionOf(p.id)),
+    sharpness: Math.round(sharpnessOf(p.id)),
+    injury: injuryOf(p.id),
+    contract: p.ovr >= 80 ? "핵심" : p.ovr >= 73 ? "로테이션" : "유망주",
+  }));
+}
+
 function rosterFor(teamId) {
   // 실제 선수 데이터(data/game_players.js)가 있으면 사용
   if (typeof KBL_REAL_ROSTERS !== "undefined" && KBL_REAL_ROSTERS[teamId] && KBL_REAL_ROSTERS[teamId].length) {
-    const list = KBL_REAL_ROSTERS[teamId];
-    // 주전 5명: 포지션별 최고 OVR (주포지션 우선, 없으면 보조포지션, 그래도 없으면 최고 OVR)
-    const used = new Set();
-    const starters = [];
-    for (const pos of positions) {
-      let pick = list.filter((p) => !used.has(p.id) && p.pos === pos).sort((a, b) => b.ovr - a.ovr)[0];
-      if (!pick) pick = list.filter((p) => !used.has(p.id) && p.subPos === pos).sort((a, b) => b.ovr - a.ovr)[0];
-      if (!pick) pick = list.filter((p) => !used.has(p.id)).sort((a, b) => b.ovr - a.ovr)[0];
-      if (pick) { used.add(pick.id); starters.push({ ...pick, slotPos: pos }); }
-    }
-    const bench = list.filter((p) => !used.has(p.id)).sort((a, b) => b.ovr - a.ovr);
-    return [...starters, ...bench].map((p, index) => ({
-      name: p.name,
-      playerId: p.id,
-      position: p.subPos ? `${p.pos}/${p.subPos}` : p.pos,
-      mainPosition: p.slotPos || p.pos,
-      ovr: p.ovr,
-      atk: p.atk,
-      def: p.def,
-      grade: p.grade,
-      age: ageAt(p.birth, p.age),
-      birth: p.birth,
-      height: p.height,
-      attrs: effectiveAttrs(p.id, p.attrs),
-      hidden: p.hidden,
-      role: index < 5 ? "주전" : "벤치",
-      form: p.ovr,
-      condition: Math.round(conditionOf(p.id)),
-      injury: injuryOf(p.id),
-      contract: p.ovr >= 80 ? "핵심" : p.ovr >= 73 ? "로테이션" : "유망주",
-    }));
+    return buildRosterList(KBL_REAL_ROSTERS[teamId].filter((p) => !isDLeaguePlayer(p.id)));
   }
-  // 폴백: 기존 시드 로스터
-  return rosterSeeds[teamId].map((name, index) => ({
+  // 폴백: 기존 시드 로스터 (없으면 빈 로스터 — 예: 아직 선수단이 없는 상무 농구단)
+  return (rosterSeeds[teamId] || []).map((name, index) => ({
     name,
     position: positions[index % positions.length],
     mainPosition: positions[index % positions.length],
@@ -338,6 +447,26 @@ function rosterFor(teamId) {
     condition: 70 + ((index * 5 + teamId.length) % 24),
     contract: index < 3 ? "핵심" : index < 6 ? "로테이션" : "유망주",
   }));
+}
+
+// D리그(2군) 로스터: 해당 팀 선수 중 D리그로 설정된 선수만 반환
+function dleagueRosterFor(teamId) {
+  if (typeof KBL_REAL_ROSTERS === "undefined" || !KBL_REAL_ROSTERS[teamId]) return [];
+  const list = KBL_REAL_ROSTERS[teamId].filter((p) => isDLeaguePlayer(p.id));
+  if (!list.length) return [];
+  return buildRosterList(list);
+}
+
+// D리그로 배정된 인원 (로스터 관리 화면용 — 부상 여부와 무관하게 "설정된" 인원수)
+function dleagueCountFor(teamId) {
+  if (typeof KBL_REAL_ROSTERS === "undefined" || !KBL_REAL_ROSTERS[teamId]) return 0;
+  return KBL_REAL_ROSTERS[teamId].filter((p) => isDLeaguePlayer(p.id)).length;
+}
+
+// 지금 당장 실제로 뛸 수 있는(부상 아닌) D리그 인원 — 경기 개최 여부 판정용
+function dleagueAvailableCountFor(teamId) {
+  if (typeof KBL_REAL_ROSTERS === "undefined" || !KBL_REAL_ROSTERS[teamId]) return 0;
+  return KBL_REAL_ROSTERS[teamId].filter((p) => isDLeaguePlayer(p.id) && !injuryOf(p.id)).length;
 }
 
 // ===== 체력(컨디션) · 부상 시스템 =====
@@ -371,7 +500,12 @@ function applyDailyRecovery() {
     inj.daysLeft -= 1;
     if (inj.daysLeft <= 0) {
       delete state.injuries[pid];
-      if (inj.team === state.selectedTeamId) addNews(`💪 ${inj.playerName}, ${inj.name} 회복 완료 — 다음 경기부터 출전 가능합니다.`);
+      if (inj.team === state.selectedTeamId) {
+        addNews(
+          `${inj.playerName} 선수가 ${inj.name} 부상에서 완전히 회복했습니다. 재활 프로그램을 마쳤으며 다음 경기부터 출전이 가능합니다.`,
+          { sender: "medical", title: `${inj.playerName} 부상 복귀 판정` },
+        );
+      }
     }
   });
   // 내 팀 선수 생일 (인게임 달력 기준으로 나이가 올라간다)
@@ -380,17 +514,33 @@ function applyDailyRecovery() {
     if (!p.birth) return;
     const b = new Date(p.birth);
     if (!isNaN(b.getTime()) && b.getMonth() === today.getMonth() && b.getDate() === today.getDate()) {
-      addNews(`🎂 오늘은 ${p.name} 선수의 생일입니다. 만 ${ageAt(p.birth, p.age)}세가 되었습니다.`);
+      addNews(
+        `${p.name} 선수가 오늘 만 ${ageAt(p.birth, p.age)}세 생일을 맞았습니다. 구단 프런트가 축하 인사를 전달했습니다.`,
+        { sender: "front", title: `${p.name} 선수 생일` },
+      );
     }
   });
 }
 
 // 경기 종료 후: 출전 시간만큼 체력 소모, 경기 중 발생한 부상 등록
-function applyGameFatigue(result) {
+// 경기 감각(경기력·부상위험·성장속도에 영향): 0~100, 미설정 시 중립값 70에서 시작.
+// 실전 출전(1군 > D리그)으로 회복되고, 안 뛰면 매일 서서히 녹슨다.
+function sharpnessOf(pid) {
+  const v = state.sharpness && state.sharpness[pid];
+  return v == null ? 70 : v;
+}
+function boostSharpness(pid, minutes, dleague) {
+  state.sharpness = state.sharpness || {};
+  const mult = dleague ? 0.35 : 0.6; // D리그는 1군보다 회복 효과가 약함("그나마 도움")
+  state.sharpness[pid] = Math.min(100, Math.round((sharpnessOf(pid) + minutes * mult) * 10) / 10);
+}
+
+function applyGameFatigue(result, dleague) {
   state.playerCondition = state.playerCondition || {};
   state.injuries = state.injuries || {};
   state.injuryHistory = state.injuryHistory || {};
   [...(result.homeBox || []), ...(result.awayBox || [])].forEach((p) => {
+    if (p.min > 0) boostSharpness(p.id, p.min, dleague);
     if (!p.drain) return;
     state.playerCondition[p.id] = Math.max(3, Math.round((conditionOf(p.id) - p.drain) * 10) / 10);
   });
@@ -401,9 +551,22 @@ function applyGameFatigue(result) {
     if (hist.length > 30) hist.shift(); // 선수당 최근 30건까지만 보관 (세이브 용량 관리)
     applyInjurySetback(inj.id, inj.days);
     if (inj.team === state.selectedTeamId) {
-      addNews(`🚑 ${inj.name}, 경기 중 ${inj.label} — 약 ${inj.days}일 결장이 예상됩니다.`);
-      if (inj.days >= 180) addNews(`💔 ${inj.name}, 사실상 시즌아웃급 부상입니다. 이번 시즌 복귀가 어려울 수 있습니다.`);
-      if (inj.days >= MAJOR_INJURY_DAYS) addNews(`⚠ ${inj.name}, 장기 결장으로 한동안 성장이 정체될 수 있습니다. 심하면 능력치가 일부 떨어질 수도 있습니다.`);
+      addNews(
+        `${inj.name} 선수가 경기 중 ${inj.label} 진단을 받았습니다. 정밀 검진 결과 약 ${inj.days}일간의 결장이 예상되며, 재활 프로그램에 즉시 돌입합니다.`,
+        { sender: "medical", title: `${inj.name} 부상 보고`, priority: inj.days >= MAJOR_INJURY_DAYS ? "important" : "normal" },
+      );
+      if (inj.days >= 180) {
+        addNews(
+          `${inj.name} 선수의 부상이 사실상 시즌아웃급으로 판단됩니다. 회복 경과에 따라 이번 시즌 내 복귀가 어려울 수 있습니다.`,
+          { sender: "medical", title: `${inj.name} 시즌아웃 경보`, priority: "important" },
+        );
+      }
+      if (inj.days >= MAJOR_INJURY_DAYS) {
+        addNews(
+          `${inj.name} 선수는 장기 결장이 예상되어 한동안 기량 성장이 정체될 수 있습니다. 재활 경과가 좋지 않을 경우 일부 능력치 하락도 우려됩니다.`,
+          { sender: "training", title: `${inj.name} 성장 정체 우려` },
+        );
+      }
     }
   });
 }
@@ -706,39 +869,70 @@ function renderHeader() {
     .join("")
     .slice(0, 3);
   crest.style.setProperty("--crest-color", team.color);
-  document.querySelector("#seasonLabel").textContent = `시즌 ${state.season} | ${fmtDate(state.day, { year: true })}`;
-  document.querySelector("#dateChip").textContent = state.day < 2 ? "프리시즌" : fmtDate(state.day);
+  document.querySelector("#seasonLabel").textContent = `시즌 ${state.season}`;
+  document.querySelector("#seasonLabel").title = `시즌 ${state.season} | ${fmtDate(state.day, { year: true })}`;
+  document.querySelector("#dateChip").textContent = state.day < 2 ? "프리시즌" : fmtDateShort(state.day);
   document.querySelector("#clubSubtitle").textContent = `${team.city} | KBL 정규리그 준비 중`;
   document.querySelector("#clubName").textContent = team.name;
   document.querySelector("#topSummary").textContent = `${team.name} ${getRank(team.id)}위 - 다음 경기: ${nextGameText()}`;
   document.querySelector("#recordText").textContent = `${record.wins}승 ${record.losses}패`;
   document.querySelector("#rankText").textContent = `${getRank(team.id)}위`;
   document.documentElement.style.setProperty("--team-color", team.color);
+  document.querySelector(".app-shell").classList.toggle("team-bg", state.bgTheme === "team");
+  const bgBtn = document.querySelector("#bgChangeButton");
+  if (bgBtn) bgBtn.classList.toggle("active", state.bgTheme === "team");
+
+  // 통합 진행 버튼: 안 읽은 뉴스가 있으면 "다음 읽기", 다 읽었으면 "다음 경기"로 전환
+  const continueBtn = document.querySelector("#continueButton");
+  const unread = unreadNewsCount();
+  if (unread > 0) {
+    continueBtn.textContent = `다음 읽기 (${unread}) ›`;
+    continueBtn.classList.remove("subtle");
+    continueBtn.dataset.mode = "read";
+  } else {
+    continueBtn.textContent = "다음 경기 ›";
+    continueBtn.classList.remove("subtle");
+    continueBtn.dataset.mode = "game";
+  }
 }
+
+// 탭바 필터값 -> 발신처. training/medical(내부 보고서)은 전용 탭 없이 "수신함(all)"에서만 노출
+const INBOX_TAB_SENDER = {
+  marketing: "marketing", // 소셜 피드
+  sportsnews: "sportsnews", // 뉴스
+  front: "front", // 리그 소식
+  press: "press", // 세계 소식
+  scout: "scout", // 이적 시장 뉴스
+};
 
 function renderInboxList() {
   const list = document.querySelector("#inboxList");
   if (!list) return;
-  const team = selectedTeam();
-  const manager = state.manager || defaultManager();
-  const items = [
-    { sender: "KBL 뉴스", time: "09:00", title: `${team.name}, ${manager.name} 감독 선임`, active: true },
-    { sender: "운영진", time: "08:52", title: "프리시즌 운영 목표 확인" },
-    { sender: "스카우트 팀", time: "08:45", title: "국내 FA 후보 리스트 준비 중" },
-    { sender: "전력분석실", time: "08:37", title: "다음 상대 분석 템플릿 생성" },
-    { sender: "의료 센터", time: "08:30", title: "선수단 컨디션 리포트 대기" },
-    { sender: "홍보팀", time: "08:12", title: "서포터즈 기대 사항 정리" },
-    { sender: "재무팀", time: "08:06", title: "급여 예산 업데이트 필요" },
-  ];
-
-  list.innerHTML = items
-    .map(
-      (item) => `
-        <button class="inbox-item ${item.active ? "active" : ""}">
-          <span><strong>${item.sender}</strong><em>${item.time}</em></span>
-          <p>${item.title}</p>
-        </button>`,
-    )
+  const unread = unreadNewsCount();
+  const readNextBtn = document.querySelector("#inboxReadNextButton");
+  if (readNextBtn) {
+    readNextBtn.textContent = unread > 0 ? `다음 읽기 (${unread}) ››` : "모두 읽음 ✓";
+    readNextBtn.disabled = unread === 0;
+  }
+  const filtered = filteredNewsList();
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty-record" style="padding:16px;">아직 소식이 없습니다.</div>';
+    return;
+  }
+  // 최신 소식이 위로
+  const rows = [...filtered].reverse();
+  const selectedId = state.selectedNewsId || rows[0].id;
+  list.innerHTML = rows
+    .map((item) => {
+      const meta = newsMetaOf(item.sender);
+      const isSelected = item.id === selectedId;
+      return `
+        <button class="inbox-item ${isSelected ? "active" : ""} ${item.read ? "" : "unread"}" data-news-id="${item.id}" style="--sender-color:${meta.color}">
+          <span><strong>${meta.label}</strong><em>${item.read ? "" : "안 읽음"}</em></span>
+          <b class="inbox-item-title">${item.title}</b>
+          <p>${item.body}</p>
+        </button>`;
+    })
     .join("");
 }
 
@@ -835,7 +1029,9 @@ function starsHtml(value5) {
 }
 
 // ===== 훈련(육성) 시스템 =====
-// 카테고리별 훈련 프로그램. 선수는 공격 1개 + 수비 1개 + 체력 최대 2개까지 동시에 배정 가능
+// 카테고리별 훈련 프로그램. 선수 1명당 공격/수비/체력 12개 프로그램 중 단 1개만 배정 가능.
+// 훈련을 배정하면 포지션과 무관하게 그 방향으로 집중 성장(예: 패스 잘하는 센터, 3점 쏘는 센터 만들기 용도).
+// 배정하지 않으면 그 선수 포지션에 자연스러운 능력치들이 고르게 성장한다.
 const TRAINING_PROGRAMS = {
   off: {
     paint: { name: "골밑 공격 중심", desc: "근거리슛 · 스탠딩덩크 · 포스트컨트롤 성장", keys: ["근거리슛", "스탠딩덩크", "포스트컨트롤"] },
@@ -935,8 +1131,58 @@ function autoTrainingFor(p) {
   return { cat: best.cat, key: best.key };
 }
 
+// 훈련/재분배로 한 능력치가 움직일 수 있는 총 범위. 성장 쪽은 +18로 브레이크를 걸어
+// "패스 50짜리 가드가 99까지" 같은 비현실적 성장을 막는다. 하락(노쇠화) 쪽은 -25까지 허용.
 function clampGrowthDelta(v) {
-  return Math.max(-25, Math.min(30, v));
+  return Math.max(-25, Math.min(18, v));
+}
+
+// 포지션별로 자연스러운(자주 쓰는) 능력치 목록 — 훈련 미배정 시 이 안에서만 고르게 성장한다.
+// 체력은 포지션 공통으로 포함(모든 선수에게 컨디셔닝은 기본).
+const POSITION_NATURAL_ATTRS = {
+  PG: ["패스정확도", "볼핸들링", "드리블속도", "3점슛", "자유투", "스틸", "외곽수비", "속도", "민첩성", "체력"],
+  SG: ["3점슛", "중거리슛", "드라이빙레이업", "볼핸들링", "스틸", "외곽수비", "속도", "민첩성", "자유투", "체력"],
+  SF: ["3점슛", "중거리슛", "드라이빙레이업", "외곽수비", "수비리바운드", "스틸", "힘", "속도", "점프력", "체력"],
+  PF: ["근거리슛", "포스트컨트롤", "공격리바운드", "수비리바운드", "골밑수비", "블록", "힘", "점프력", "드라이빙덩크", "체력"],
+  C: ["근거리슛", "포스트컨트롤", "공격리바운드", "수비리바운드", "골밑수비", "블록", "힘", "점프력", "스탠딩덩크", "체력"],
+};
+function naturalAttrsFor(pos) {
+  return POSITION_NATURAL_ATTRS[pos] || POSITION_NATURAL_ATTRS.SF;
+}
+
+// 신체 조건에 따른 현실적 성장 한도. 훈련/재분배로 "만들 수 있는" 최고치에만 걸리는 브레이크이고,
+// 에디터가 부여한 원래 능력치(예외적인 실존 유형)는 건드리지 않는다 — 그 지점에서 더는 못 자란다는 뜻일 뿐.
+// h1<h2 구간에서 cap1->cap2로 선형 보간하고, 구간 밖은 양 끝값으로 고정.
+function lerpCap(h, h1, cap1, h2, cap2) {
+  if (h <= h1) return cap1;
+  if (h >= h2) return cap2;
+  return Math.round(cap1 + (cap2 - cap1) * ((h - h1) / (h2 - h1)));
+}
+// "크면 불리" 계열: 키가 클수록 한도가 낮아짐 (장신의 스피드·순발력, 2m대 빅맨의 3점슛 한계 등)
+const TALL_PENALTY_ATTRS = {
+  속도: [185, 99, 215, 80],
+  민첩성: [185, 99, 215, 80],
+  드리블속도: [185, 99, 215, 80],
+  "3점슛": [195, 99, 220, 78],
+};
+// "작으면 불리" 계열: 키가 작을수록 한도가 낮아짐 (사이즈가 필요한 리바운드·힘·블록)
+const SHORT_PENALTY_ATTRS = {
+  공격리바운드: [175, 78, 195, 99],
+  수비리바운드: [175, 78, 195, 99],
+  힘: [178, 82, 200, 99],
+  블록: [180, 75, 200, 99],
+};
+function attrCeiling(key, heightCm) {
+  const h = Number(heightCm) || 190;
+  if (TALL_PENALTY_ATTRS[key]) {
+    const [h1, cap1, h2, cap2] = TALL_PENALTY_ATTRS[key];
+    return lerpCap(h, h1, cap1, h2, cap2);
+  }
+  if (SHORT_PENALTY_ATTRS[key]) {
+    const [h1, cap1, h2, cap2] = SHORT_PENALTY_ATTRS[key];
+    return lerpCap(h, h1, cap1, h2, cap2);
+  }
+  return 99;
 }
 
 // 노쇠화: 30세부터 훈련 배정 여부와 무관하게 능력치가 서서히 하락한다.
@@ -1000,12 +1246,15 @@ function applyDailyDevelopment() {
       }
       const age = ageAt(p.birth, p.age);
       applyAgingDecline(p, age);
+      // 경기 감각 하루 감소분: 실전에서 뛴 날은 boostSharpness가 이를 상쇄하고도 남는다
+      state.sharpness = state.sharpness || {};
+      state.sharpness[p.id] = Math.max(0, Math.round((sharpnessOf(p.id) - 1.2) * 10) / 10);
 
       const plan = state.training[p.id];
       const hasPlan = trainingAssigned(plan);
       const base = p.attrs || {};
-      // 훈련 미배정 -> 특정 방향 없이 전체 능력치에 고르게 성장 대상 삼음
-      const targets = hasPlan ? trainingTargets(base, plan) : Object.keys(base).map((k) => ({ key: k, cat: "balanced" }));
+      // 훈련 미배정 -> 그 선수 포지션에 자연스러운 능력치들 안에서만 고르게 성장 (엉뚱한 능력치는 안 큼)
+      const targets = hasPlan ? trainingTargets(base, plan) : naturalAttrsFor(p.pos).map((k) => ({ key: k, cat: "balanced" }));
       if (!targets.length) return;
 
       const hid = p.hidden || {};
@@ -1029,10 +1278,9 @@ function applyDailyDevelopment() {
       const amb = Number(hid["야망"]);
       const proAmbAvg = ((isNaN(pro) ? 10 : pro) + (isNaN(amb) ? 10 : amb)) / 2;
       const mentalMult = 0.75 + (proAmbAvg / 20) * 0.5;
-      // 실전 출전 경험(이번 시즌 평균 출전시간)이 많을수록 성장에 도움 (0.6~1.4배)
-      const pstat = (state.playerStats && state.playerStats[p.id]) || null;
-      const avgMin = pstat && pstat.g ? pstat.min / pstat.g : 0;
-      const expMult = Math.max(0.6, Math.min(1.4, 0.6 + (avgMin / 25) * 0.8));
+      // 경기 감각(1군 출전으로 가장 많이, D리그 출전으로도 어느 정도 쌓임)이 높을수록 성장이 빠름 (0.6~1.4배).
+      // 안 뛰면 감각이 녹슬어 성장도 늦어진다.
+      const expMult = Math.max(0.6, Math.min(1.4, 0.6 + (sharpnessOf(p.id) / 100) * 0.8));
 
       const growChance = canGrow ? (seasonTarget / SEASON_DAYS) * mentalMult * expMult : 0;
 
@@ -1040,7 +1288,8 @@ function applyDailyDevelopment() {
         const t = targets[Math.floor(Math.random() * targets.length)];
         const cur = attrGrowthOf(p.id, t.key);
         const baseV = Number(base[t.key]) || 50;
-        if (baseV + cur < 99) {
+        const ceiling = Math.min(99, attrCeiling(t.key, p.height));
+        if (baseV + cur < ceiling) {
           dev.attrs[t.key] = clampGrowthDelta(cur + 1);
           dev.caGained += 1;
         }
@@ -1057,7 +1306,8 @@ function applyDailyDevelopment() {
           const t = targets[Math.floor(Math.random() * targets.length)];
           const tBase = Number(base[t.key]) || 50;
           const tCur = attrGrowthOf(p.id, t.key);
-          if (tBase + tCur < 99) {
+          const tCeiling = Math.min(99, attrCeiling(t.key, p.height));
+          if (tBase + tCur < tCeiling) {
             dev.attrs[donor] = clampGrowthDelta(attrGrowthOf(p.id, donor) - 1);
             dev.attrs[t.key] = clampGrowthDelta(tCur + 1);
           }
@@ -1235,16 +1485,19 @@ function renderPlayerDetail(root) {
     const stagnantNow = dev && dev.stagnantUntilDay && state.day < dev.stagnantUntilDay;
     const pstatP = (state.playerStats && state.playerStats[p.id]) || null;
     const avgMinP = pstatP && pstatP.g ? (pstatP.min / pstatP.g).toFixed(1) : null;
+    const sharpP = Math.round(sharpnessOf(p.id));
+    const sharpColorP = sharpP >= 70 ? "#4caf7a" : sharpP >= 40 ? "#d9a13b" : "#d95b5b";
     tabContent = `
       <div class="home-panel" style="margin:0 0 10px;">
         <h3>성장 현황</h3>
         <div class="record-row"><span>현재능력 → 잠재능력</span><strong>${hasCA ? `${eca}${gained > 0 ? ` (+${gained})` : ""} / ${pa}` : "-"}</strong><em>${stagnantNow ? "🚑 부상 후유증으로 성장 정체 중" : capped ? "성장 여지 소진 — 재분배만 가능" : growWindowOver ? "성장 구간(18~28세) 종료 — 재분배만 가능" : ""}</em></div>
         <div class="record-row"><span>나이 구간</span><strong>${ageP}세</strong><em>${declining ? "노쇠화 구간 — 능력치가 서서히 하락합니다" : ageP >= 24 ? "전성기" : "성장 구간"}</em></div>
-        <div class="record-row"><span>이번 시즌 평균 출전시간</span><strong>${avgMinP != null ? `${avgMinP}분 (${pstatP.g}경기)` : "출전 기록 없음"}</strong><em>출전이 많을수록 성장이 빨라짐</em></div>
+        <div class="record-row"><span>경기 감각</span><strong style="color:${sharpColorP}">${sharpP}%</strong><em>1군 출전으로 가장 빨리, D리그 출전으로도 어느 정도 회복 — 안 뛰면 매일 조금씩 녹슬고 성장도 느려짐</em></div>
+        <div class="record-row"><span>이번 시즌 1군 평균 출전시간</span><strong>${avgMinP != null ? `${avgMinP}분 (${pstatP.g}경기)` : "출전 기록 없음"}</strong><em></em></div>
       </div>
       <div class="home-panel" style="margin:0 0 10px;">
         <h3>현재 배정된 훈련 <span class="muted">— 공격·수비·체력 12개 프로그램 중 1개만 배정 가능</span></h3>
-        <div class="record-row"><span>${trainingAssigned(plan) ? catLabel : "훈련"}</span><strong>${progLabel}</strong><em>${trainingAssigned(plan) ? "" : "미배정 — 모든 능력치에 고르게 소폭 성장합니다"}</em></div>
+        <div class="record-row"><span>${trainingAssigned(plan) ? catLabel : "훈련"}</span><strong>${progLabel}</strong><em>${trainingAssigned(plan) ? "" : "미배정 — 포지션에 맞는 능력치가 고르게 성장합니다"}</em></div>
         <p style="margin-top:8px;">${trSelect}</p>
         <p class="muted" style="font-size:12px; margin-top:6px;">팀 전체 배정은 사이드바 '훈련' 화면에서도 관리할 수 있습니다. <button class="mini-button" id="pdGoTraining">→ 훈련 화면으로</button></p>
       </div>
@@ -1253,6 +1506,8 @@ function renderPlayerDetail(root) {
     const injNow = injuryOf(p.id);
     const condNow = Math.round(conditionOf(p.id));
     const condColor = condNow >= 80 ? "#4caf7a" : condNow >= 55 ? "#d9a13b" : "#d95b5b";
+    const sharpNow = Math.round(sharpnessOf(p.id));
+    const sharpColor = sharpNow >= 70 ? "#4caf7a" : sharpNow >= 40 ? "#d9a13b" : "#d95b5b";
     const history = [...((state.injuryHistory && state.injuryHistory[p.id]) || [])].reverse();
     const severityColor = (days) => (days >= 180 ? "#c0605c" : days >= 30 ? "#d9a13b" : days >= 10 ? "#e6c84f" : "#8a94a6");
     const severityTag = (days) => (days >= 180 ? "시즌아웃급" : days >= 30 ? "중대" : days >= 10 ? "중간" : "경미");
@@ -1274,8 +1529,9 @@ function renderPlayerDetail(root) {
       <div class="home-panel" style="margin:0 0 10px;">
         <h3>현재 상태</h3>
         <p>체력(컨디션): <strong style="color:${condColor}">${condNow}%</strong> ${condNow < 55 ? "— 휴식이 필요합니다. 이 상태로 출전하면 기량 저하와 부상 위험이 커집니다" : condNow < 80 ? "— 다소 지쳐 있습니다" : "— 몸 상태가 좋습니다"}</p>
+        <p>경기 감각: <strong style="color:${sharpColor}">${sharpNow}%</strong> ${sharpNow < 40 ? "— 경기 감각이 많이 떨어져 있습니다. 경기력 저하와 부상 위험이 커집니다" : sharpNow < 70 ? "— 감각이 다소 무뎌졌습니다. 출전 기회가 필요합니다" : "— 감각이 살아있습니다"}</p>
         <p>부상: <strong>${injNow ? `🚑 ${injNow.name} — 복귀까지 약 ${injNow.daysLeft}일` : "없음"}</strong></p>
-        <p class="muted" style="font-size:12px;">체력은 경기 출전으로 소모되고 휴식일마다 회복됩니다. 체력이 낮은 상태로 출전을 강행하면 경기력이 떨어지고 부상 확률이 높아집니다.</p>
+        <p class="muted" style="font-size:12px;">체력은 경기 출전으로 소모되고 휴식일마다 회복됩니다. 경기 감각은 반대로 실전에 뛰어야(1군&gt;D리그) 오르고, 안 뛰면 매일 조금씩 떨어집니다. 둘 다 낮은 상태로 출전을 강행하면 경기력이 떨어지고 부상 확률이 높아집니다.</p>
       </div>
       <div class="home-panel" style="margin:0;">
         <h3>부상 이력 <span class="muted">— 통산 ${history.length}회${totalDays ? ` · 총 ${totalDays}일 결장` : ""}</span></h3>
@@ -1356,41 +1612,56 @@ function renderPlayerDetail(root) {
   };
 }
 
+function filteredNewsList() {
+  const all = state.news || [];
+  const filter = state.inboxFilter || "all";
+  return filter === "all" ? all : all.filter((item) => item.sender === INBOX_TAB_SENDER[filter]);
+}
+
 function renderInbox(root) {
-  const team = selectedTeam();
-  const manager = state.manager || defaultManager();
-  const standing = state.standings[team.id];
+  const list = filteredNewsList();
+  if (!list.length) {
+    root.innerHTML = `<article class="mail-article"><p class="empty-record" style="padding:24px 4px;">이 분류에는 아직 소식이 없습니다.</p></article>`;
+    return;
+  }
+  const reversed = [...list].reverse();
+  const item = (state.selectedNewsId && list.find((n) => n.id === state.selectedNewsId)) || reversed[0];
+  const meta = newsMetaOf(item.sender);
+  const dateLabel = fmtDate(item.day, { year: true, season: item.season });
+
+  if (meta.kind === "report") {
+    root.innerHTML = `
+      <article class="mail-article report-doc">
+        <header class="article-header">
+          <div class="staff-portrait" style="--portrait-tint: ${meta.color}"></div>
+          <div class="article-crest report-stamp" style="--article-color: ${meta.color}">${meta.tag.replace(/\s/g, "").slice(0, 2)}</div>
+          <div>
+            <p>발신: ${meta.label} · 수신: 감독님 · ${dateLabel}</p>
+            <h1>${item.title}</h1>
+          </div>
+        </header>
+        <section class="news-card">
+          <div class="news-ribbon" style="background:${meta.color}">${meta.tag}</div>
+          <p>${item.body}</p>
+        </section>
+      </article>`;
+    return;
+  }
+
   root.innerHTML = `
-    <article class="mail-article">
+    <article class="mail-article news-doc">
       <header class="article-header">
-        <div class="staff-portrait"></div>
-        <div class="article-crest" style="--article-color: ${team.color}">${team.city}</div>
+        <div class="staff-portrait press-portrait"></div>
+        <div class="article-crest" style="--article-color: ${meta.color}">KBL</div>
         <div>
-          <p>구단 언론 담당자</p>
-          <h1>전달: ${team.name}, ${manager.name} 감독으로 선임</h1>
+          <p>${meta.label} · ${dateLabel}</p>
+          <h1>${item.title}</h1>
         </div>
       </header>
-      <p class="article-intro">
-        ${team.name}에 오신 것을 환영합니다. 저는 구단 홍보팀입니다. 앞으로 감독님께 KBL과 구단의 주요 소식을 전달해 드릴 예정입니다.
-      </p>
       <section class="news-card">
-        <div class="news-ribbon">KBL ZONE</div>
-        <h2>${team.name}, ${manager.name} 감독 선임</h2>
-        <p>${team.name}은 오늘 ${manager.name} 감독을 구단의 새로운 감독으로 임명했습니다.</p>
-        <p>구단은 새 감독의 전술 방향과 선수단 운영 철학이 ${team.city} 팬들에게 새로운 활력을 줄 것으로 기대하고 있습니다.</p>
-      </section>
-      <section class="article-grid">
-        <aside class="manager-card">
-          <div class="manager-photo"></div>
-          <strong>${manager.name}</strong>
-          <span>${managerOrigins.find((item) => item.id === manager.origin)?.name || "매니저"}</span>
-        </aside>
-        <div class="career-line">
-          <h3>경력 요약</h3>
-          <div class="timeline-node">2026</div>
-          <p><strong>${team.name}</strong> 감독으로 취임</p>
-          <p>현재 전적: ${standing.wins}승 ${standing.losses}패 | 리그 ${getRank(team.id)}위</p>
-        </div>
+        <div class="news-ribbon" style="background:${meta.color}">${meta.tag}</div>
+        <h2>${item.title}</h2>
+        <p>${item.body}</p>
       </section>
     </article>`;
 }
@@ -1511,12 +1782,22 @@ function setStarterAt(pos, pid) {
   saveState();
 }
 
+// 선수단 화면 전용: D리그 포함 전체 선수 목록 (1군 로스터와 달리 D리그 선수도 표시)
+function fullRosterFor(teamId) {
+  if (typeof KBL_REAL_ROSTERS === "undefined" || !KBL_REAL_ROSTERS[teamId] || !KBL_REAL_ROSTERS[teamId].length) {
+    return rosterFor(teamId).map((p) => ({ ...p, dleague: false }));
+  }
+  return buildRosterList(KBL_REAL_ROSTERS[teamId]).map((p) => ({ ...p, dleague: isDLeaguePlayer(p.playerId) }));
+}
+
 function renderRoster(root) {
-  const roster = rosterFor(state.selectedTeamId);
+  const roster = rosterFor(state.selectedTeamId); // 1군 후보만 (D리그 제외) — 선발 드롭다운용
+  const allRoster = fullRosterFor(state.selectedTeamId); // D리그 포함 전체 — 명단 테이블용
   const cfg = state.lineupConfig || defaultLineupConfig();
   const rotSet = new Set(cfg.rotation);
   const starterIds = Object.values(cfg.starters || {});
   const stamOf = (p) => (p.attrs && Number(p.attrs["체력"])) || 70;
+  const dleagueCount = allRoster.filter((p) => p.dleague).length;
 
   const posSlot = (pos) => {
     const cur = roster.find((p) => p.playerId === cfg.starters[pos]);
@@ -1530,24 +1811,30 @@ function renderRoster(root) {
       </div>`;
   };
 
-  const rows = [...roster]
+  const rows = [...allRoster]
     .sort((a, b) => (b.ovr || 0) - (a.ovr || 0))
     .map((p, i) => {
-      const isStarter = starterIds.includes(p.playerId);
-      const inRot = rotSet.has(p.playerId);
+      const isStarter = !p.dleague && starterIds.includes(p.playerId);
+      const inRot = !p.dleague && rotSet.has(p.playerId);
       const condColor = p.condition >= 80 ? "#4caf7a" : p.condition >= 55 ? "#d9a13b" : "#d95b5b";
       const condCell = p.injury
         ? `<span class="squad-tag youth">🚑 ${p.injury.name} ${p.injury.daysLeft}일</span>`
         : `<strong style="color:${condColor}">${p.condition}%</strong>`;
+      const sharpColor = p.sharpness >= 70 ? "#4caf7a" : p.sharpness >= 40 ? "#d9a13b" : "#d95b5b";
+      const roleTag = p.dleague
+        ? `<span class="squad-tag youth">D리그</span>`
+        : isStarter ? `<span class="squad-tag core">선발</span>` : inRot ? `<span class="squad-tag">로테이션</span>` : `<span class="squad-tag youth">제외</span>`;
       return `
         <tr class="${i % 2 ? "alt" : ""}${isStarter ? " starter-row" : ""}">
-          <td><input type="checkbox" data-rot-id="${p.playerId}" ${inRot ? "checked" : ""} ${isStarter ? "disabled" : ""}></td>
-          <td>${isStarter ? `<span class="squad-tag core">선발</span>` : inRot ? `<span class="squad-tag">로테이션</span>` : `<span class="squad-tag youth">제외</span>`}</td>
+          <td><input type="checkbox" data-rot-id="${p.playerId}" ${inRot ? "checked" : ""} ${isStarter || p.dleague ? "disabled" : ""}></td>
+          <td><input type="checkbox" data-dleague-id="${p.playerId}" ${p.dleague ? "checked" : ""}></td>
+          <td>${roleTag}</td>
           <td style="text-align:left;"><span class="pcell">${playerFace(p.playerId)}<strong>${playerLink(p.playerId, p.name)}</strong></span>${p.age != null ? ` <small style="color:#8a94a6">(${p.age}세)</small>` : ""}</td>
           <td>${p.mainPosition || p.position}</td>
           <td>${p.position}</td>
           <td>${stamOf(p)}</td>
           <td>${condCell}</td>
+          <td><strong style="color:${sharpColor}">${p.sharpness}%</strong></td>
           <td><span class="rating-pill">${p.ovr != null ? p.ovr : "-"}</span></td>
         </tr>`;
     })
@@ -1560,9 +1847,10 @@ function renderRoster(root) {
     </section>
     <section class="home-panel">
       <h3>로테이션 명단 <span class="muted">— ${cfg.rotation.length}/12명 (선발 포함, 제외된 선수는 경기에 나서지 않습니다)</span></h3>
+      <p class="muted" style="margin-bottom:8px;">D리그 로스터: <strong style="color:${dleagueCount >= 5 ? "#4caf7a" : "#d9a13b"}">${dleagueCount}명</strong> (최소 5명이어야 D리그 경기가 열립니다) — D리그로 설정한 선수는 1군 경기에 뛸 수 없습니다.</p>
       <div style="overflow-x:auto;">
         <table style="font-size:12px; white-space:nowrap;">
-          <thead><tr><th>로테이션</th><th>역할</th><th>이름</th><th>주포지션</th><th>가능 포지션</th><th>체력</th><th>컨디션</th><th>OVR</th></tr></thead>
+          <thead><tr><th>로테이션</th><th>D리그</th><th>역할</th><th>이름</th><th>주포지션</th><th>가능 포지션</th><th>체력</th><th>컨디션</th><th>감각</th><th>OVR</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -1589,6 +1877,23 @@ function renderRoster(root) {
       renderRoster(root);
     };
   });
+  root.querySelectorAll("[data-dleague-id]").forEach((chk) => {
+    chk.onchange = () => {
+      const id = chk.dataset.dleagueId;
+      state.dleagueRoster = state.dleagueRoster || {};
+      if (chk.checked) {
+        state.dleagueRoster[id] = true;
+        // D리그로 보내면 1군 선발/로테이션에서 자동 제외
+        const c = state.lineupConfig || (state.lineupConfig = defaultLineupConfig());
+        c.rotation = c.rotation.filter((x) => x !== id);
+        Object.keys(c.starters || {}).forEach((pos) => { if (c.starters[pos] === id) delete c.starters[pos]; });
+      } else {
+        delete state.dleagueRoster[id];
+      }
+      saveState();
+      renderRoster(root);
+    };
+  });
   const reset = root.querySelector("#lineup-reset");
   if (reset) reset.onclick = () => { state.lineupConfig = null; saveState(); renderRoster(root); };
 }
@@ -1608,7 +1913,7 @@ function renderLineup(root) {
         )
         .join("")}
     </section>
-    <section class="empty-state">드래그 교체, 출전 시간, 2군 등록은 다음 단계에서 붙일 예정입니다.</section>`;
+    <section class="empty-state">드래그 교체, 출전 시간 배분은 다음 단계에서 붙일 예정입니다. D리그 등록은 '선수단' 화면에서 할 수 있습니다.</section>`;
 }
 
 // 추천 플레이타임 배분: 로테이션 인원에 200분을 현실적 패턴으로 배분
@@ -1763,7 +2068,7 @@ function renderTraining(root) {
   root.innerHTML = `
     <section class="home-panel">
       <h3>훈련(육성) <span class="muted">— 선수 1명당 공격·수비·체력 12개 프로그램 중 단 1개만 배정할 수 있습니다</span></h3>
-      <p class="muted" style="font-size:12px;">배정된 훈련 방향에 따라 시즌 도중 해당 능력치가 서서히 성장하고, <b>훈련을 배정하지 않아도 모든 능력치에 고르게</b> 소폭 성장합니다. 나이대별로 한 시즌(약 127일)에 오르는 양이 정해져 있어(18~20세 약 7 · 21~23세 약 5 · 24~26세 약 3 · 27~28세 약 1.5), 갭이 큰 유망주는 잠재능력에 도달하기까지 여러 시즌이 걸립니다. <b>프로의식·야망이 높거나 실전 출전이 많을수록</b> 성장이 빨라집니다(최대 약 1.75배). 성장은 18~28세까지만 진행되며 24~29세는 전성기(유지 구간), 30세부터는 훈련 여부와 무관하게 능력치가 서서히 하락합니다(프로의식이 높으면 완만). <b>큰 부상(15일 이상 결장)</b>을 당하면 회복 후 한동안 성장이 정체되고, 심하면 확률적으로 능력치가 실제로 퇴보하기도 합니다. 현재능력이 잠재능력에 도달했거나 성장 구간을 지난 선수도, 훈련을 통해 다른 능력치를 깎아 훈련 방향의 능력치로 재분배할 수는 있습니다. 능력치 변화는 선수 상세의 '능력치' 탭에서 ▲▼ 화살표로 확인할 수 있습니다.</p>
+      <p class="muted" style="font-size:12px;">훈련을 배정하지 않으면 <b>그 선수 포지션에 자연스러운 능력치들이 고르게</b> 성장합니다(센터는 골밑·리바운드·힘 계열 등). 12개 프로그램 중 하나를 배정하면 포지션과 무관하게 그 방향으로 집중 성장합니다 — <b>패스 잘하는 센터, 3점 쏘는 센터</b>처럼 포지션을 벗어난 유형을 만들 때 씁니다. 나이대별로 한 시즌(약 127일)에 오르는 양이 정해져 있어(18~20세 약 7 · 21~23세 약 5 · 24~26세 약 3 · 27~28세 약 1.5), 갭이 큰 유망주는 잠재능력에 도달하기까지 여러 시즌이 걸립니다. <b>프로의식·야망이 높거나 경기 감각이 좋을수록</b> 성장이 빨라집니다(최대 약 1.75배). <b>경기 감각은 1군 출전이 가장 잘 채워주고 D리그 출전도 어느 정도 도움이 되지만, 아예 안 뛰면 매일 조금씩 녹슬어서 경기력도 떨어지고 부상 위험도 커지고 성장도 느려집니다</b> — 그래서 당장 못 쓰는 유망주는 벤치에 썩히기보다 D리그로 보내 감각을 유지시켜주는 편이 낫습니다. 성장은 18~28세까지만 진행되며 24~29세는 전성기(유지 구간), 30세부터는 훈련 여부와 무관하게 능력치가 서서히 하락합니다(프로의식이 높으면 완만). <b>큰 부상(15일 이상 결장)</b>을 당하면 회복 후 한동안 성장이 정체되고, 심하면 확률적으로 능력치가 실제로 퇴보하기도 합니다. 훈련/재분배로 한 능력치가 오를 수 있는 폭에는 한도가 있고(패스 50짜리 선수가 99까지 오르는 식의 비현실적 성장은 안 됨), 신체 조건과 안 맞는 성장에는 별도 한계가 있습니다 — 장신 빅맨은 속도·민첩성·3점슛이, 단신 선수는 리바운드·힘·블록이 일정 수준 이상 오르지 않습니다. 능력치 변화는 선수 상세의 '능력치' 탭에서 ▲▼ 화살표로 확인할 수 있습니다.</p>
       <div style="overflow-x:auto;">
         <table style="font-size:12px; white-space:nowrap;">
           <thead><tr><th>이름</th><th>포지션</th><th>나이</th><th>현재/잠재능력</th><th>훈련 프로그램 (1개만 선택)</th></tr></thead>
@@ -2019,6 +2324,33 @@ function renderLeague(root) {
     }
   }
 
+  // D리그(2군) 순위 — 별도 로스터로 진행되는 부속 리그
+  const dst = state.dleagueStandings || {};
+  const dRows = teams
+    .map((team) => ({ team, s: dst[team.id] || { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 } }))
+    .sort((a, b) => b.s.wins - a.s.wins || a.s.losses - b.s.losses)
+    .map(({ team, s }) => {
+      const cnt = dleagueCountFor(team.id);
+      const winRate = s.wins + s.losses > 0 ? (s.wins / (s.wins + s.losses)).toFixed(3) : "-";
+      return `<tr class="${team.id === state.selectedTeamId ? "mine" : ""}">
+        <td><strong>${team.name}</strong></td>
+        <td>${s.wins}</td><td>${s.losses}</td><td>${winRate}</td>
+        <td style="color:${cnt >= 5 ? "#4caf7a" : "#d9a13b"};">${cnt}명</td>
+      </tr>`;
+    })
+    .join("");
+  const dPlayed = (state.dleagueSchedule || []).filter((g) => g.played).length;
+  const dTotal = (state.dleagueSchedule || []).length;
+  const dleagueHtml = `
+    <article class="panel" style="margin-top:12px; padding:12px;">
+      <h3>KBL D리그 <span class="muted" style="font-size:12px;">— 시즌 ${state.season} · ${dPlayed}/${dTotal}경기 진행 · 로스터 5명 미만인 팀의 경기는 보류됩니다</span></h3>
+      <table style="margin-top:8px;">
+        <thead><tr><th>팀</th><th>승</th><th>패</th><th>승률</th><th>D리그 로스터</th></tr></thead>
+        <tbody>${dRows}</tbody>
+      </table>
+      <p class="muted" style="margin-top:8px; font-size:12px;">상무 농구단은 로스터 구성 전이라 아직 D리그 일정에 포함되지 않습니다.</p>
+    </article>`;
+
   root.innerHTML = `
     <section class="table-wrap">
       <p style="padding:8px 4px; color:#666;">시즌 ${state.season} 정규리그 (상위 6팀 플레이오프 진출)</p>
@@ -2027,6 +2359,7 @@ function renderLeague(root) {
         <tbody>${rows}</tbody>
       </table>
       ${playoffHtml}
+      ${dleagueHtml}
     </section>`;
 }
 
@@ -2322,28 +2655,57 @@ function bindActions() {
     };
   });
 
-  document.querySelector("#advanceDay").onclick = () => {
-    if (state.phase === "offseason") {
-      addNews("오프시즌입니다. 리그 화면에서 새 시즌을 시작하세요.");
+  // 수신함 탭바: 발신처별로 필터링 (수신함 = 전체)
+  document.querySelectorAll(".tab-button").forEach((button) => {
+    const category = button.dataset.category || "all";
+    button.classList.toggle("active", (state.inboxFilter || "all") === category);
+    button.onclick = () => {
+      state.inboxFilter = category;
+      state.currentView = "inbox";
+      state.selectedNewsId = null; // 필터 바뀌면 해당 필터의 최신 항목을 다시 펼침
+      render();
+    };
+  });
+
+  // 수신함 목록에서 항목 클릭 -> 본문(보고서/기사) 펼쳐보기 + 해당 항목만 읽음 처리
+  document.querySelectorAll(".inbox-item").forEach((button) => {
+    button.onclick = () => {
+      const id = button.dataset.newsId;
+      const item = (state.news || []).find((n) => n.id === id);
+      if (item) item.read = true;
+      state.selectedNewsId = id;
+      state.currentView = "inbox";
+      render();
+    };
+  });
+
+  // 통합 진행 버튼: 안 읽은 뉴스가 있으면 읽음 처리만, 다 읽었으면 다음 경기로 진행
+  document.querySelector("#continueButton").onclick = () => {
+    if (unreadNewsCount() > 0) {
+      markAllNewsRead();
     } else {
-      advanceOneDay();
+      playNextGame();
     }
     render();
   };
+  const inboxReadNext = document.querySelector("#inboxReadNextButton");
+  if (inboxReadNext) inboxReadNext.onclick = () => { markAllNewsRead(); render(); };
 
-  document.querySelector("#playNext").onclick = () => {
-    playNextGame();
+  // BG 아이콘: 기본 회색 그라디언트 <-> 현재 팀 아이덴티티 컬러 그라디언트 토글
+  document.querySelector("#bgChangeButton").onclick = () => {
+    state.bgTheme = state.bgTheme === "team" ? "gray" : "team";
+    saveState();
     render();
   };
 
   document.querySelector("#finishSeason").onclick = () => {
     if (state.phase === "offseason") {
-      addNews("이미 시즌이 끝났습니다. 리그 화면에서 새 시즌을 시작하세요.");
+      addNews("이미 시즌이 끝났습니다. 리그 화면에서 새 시즌을 시작하세요.", { sender: "front", title: "시즌 종료 안내" });
       render();
       return;
     }
     if (liveGame && !liveGame.ended) {
-      addNews("진행 중인 라이브 경기를 먼저 끝내주세요.");
+      addNews("진행 중인 라이브 경기를 먼저 끝내주세요.", { sender: "front", title: "라이브 경기 진행중" });
       state.currentView = "live";
       render();
       return;
@@ -2351,7 +2713,10 @@ function bindActions() {
     if (!confirm("남은 시즌 전체(정규리그 + 플레이오프)를 자동으로 진행할까요?\n내 팀 경기도 모두 즉시 시뮬레이션됩니다.")) return;
     let guard = 0;
     while (state.phase !== "offseason" && guard++ < 500) advanceOneDay();
-    addNews(`시즌 ${state.season} 일정이 모두 종료되었습니다. 리그 탭에서 최종 순위와 시상 결과를 확인하세요.`);
+    addNews(
+      `시즌 ${state.season} 일정이 모두 종료되었습니다. 리그 탭에서 최종 순위와 시상 결과를 확인하세요.`,
+      { sender: "front", title: `시즌 ${state.season} 일정 종료` },
+    );
     state.currentView = "league";
     render();
   };
@@ -2404,15 +2769,24 @@ function handlePanelAction(action) {
   if (action === "staff-meeting") {
     state.morale = Math.min(100, state.morale + 4);
     state.stamina = Math.max(30, state.stamina - 2);
-    addNews("스태프 회의로 팀 분위기가 조금 좋아졌습니다.");
+    addNews(
+      "코칭스태프 회의를 진행했습니다. 로테이션과 훈련 강도를 점검한 결과 선수단 분위기가 소폭 개선되었습니다.",
+      { sender: "training", title: "스태프 회의 결과" },
+    );
   }
 
   if (action === "scout") {
     if (state.budget < 5) {
-      addNews("예산이 부족해 스카우트 보고서를 요청하지 못했습니다.");
+      addNews(
+        "이번 주 스카우팅 예산이 부족해 외부 리포트 요청을 보류했습니다. 예산 확보 후 다시 요청해주세요.",
+        { sender: "scout", title: "스카우팅 예산 부족" },
+      );
     } else {
       state.budget -= 5;
-      addNews("스카우트 팀이 FA와 유망주 풀을 조사하기 시작했습니다.");
+      addNews(
+        "스카우트팀이 FA 시장과 국내외 유망주 풀 조사에 착수했습니다. 조사 결과는 추후 보고서로 전달될 예정입니다.",
+        { sender: "scout", title: "스카우팅 리포트 착수" },
+      );
     }
   }
 
@@ -2483,7 +2857,10 @@ function finalizeLiveMatch() {
   state.morale = clamp(state.morale + (won ? 7 : -5), 20, 100);
   const myBox = myTeamIsHome ? game.box.home : game.box.away;
   const top = [...myBox].sort((a, b) => b.pts - a.pts)[0];
-  addNews(`${prefix}${opponent.name}전 ${myScore}:${oppScore} ${won ? "승리" : "패배"}${otTag}. ${top ? `${top.name} ${top.pts}득점 활약.` : ""}`);
+  addNews(
+    `${selectedTeam().name}이(가) ${opponent.name}을(를) 상대로 ${myScore}:${oppScore}로 ${won ? "승리했습니다" : "패배했습니다"}${otTag}. ${top ? `${top.name} 선수가 ${top.pts}득점으로 이날 경기 최고 활약을 펼쳤습니다.` : ""}`,
+    { sender: "sportsnews", title: `${prefix}${selectedTeam().name} ${won ? "승" : "패"}, ${opponent.name}전 ${myScore}:${oppScore}` },
+  );
   state.stamina = Math.max(25, state.stamina - 8 - Math.round(state.tactics.defense / 20));
 
   if (series) {
@@ -2492,9 +2869,11 @@ function finalizeLiveMatch() {
     if (state.playoffs.series.every((s) => s.winner)) advancePlayoffStage();
     state.day += 1;
     applyDailyRecovery();
+    advanceDLeagueSchedule();
   } else {
     // 같은 날 나머지 리그 경기 진행
     state.schedule.filter((g) => !g.played && g.day <= state.day).forEach((g) => simulateGame(g));
+    advanceDLeagueSchedule();
     if (state.schedule.every((g) => g.played)) startPlayoffs();
   }
 }
@@ -3129,6 +3508,7 @@ function advanceOneDay() {
   if (state.phase === "offseason") return;
   state.day += 1;
   applyDailyRecovery();
+  advanceDLeagueSchedule();
   if (state.phase === "regular") {
     const todays = state.schedule.filter((g) => !g.played && g.day <= state.day);
     todays.forEach((game) => simulateGame(game));
@@ -3145,7 +3525,7 @@ function advanceOneDay() {
 
 function playNextGame() {
   if (state.phase === "offseason") {
-    addNews("오프시즌입니다. 리그 화면에서 새 시즌을 시작하세요.");
+    addNews("오프시즌입니다. 리그 화면에서 새 시즌을 시작하세요.", { sender: "front", title: "오프시즌 안내" });
     return;
   }
   // 진행 중인 라이브 경기가 있으면 그 화면으로 복귀
@@ -3337,7 +3717,35 @@ function simulateGame(game) {
   state.morale = clamp(state.morale + (won ? 7 : -5), 20, 100);
   const myBox = myTeamIsHome ? game.box.home : game.box.away;
   const top = [...myBox].sort((a, b) => b.pts - a.pts)[0];
-  addNews(`${prefix}${opponent.name}전 ${myScore}:${oppScore} ${won ? "승리" : "패배"}${otTag}. ${top ? `${top.name} ${top.pts}득점 활약.` : ""}`);
+  addNews(
+    `${selectedTeam().name}이(가) ${opponent.name}을(를) 상대로 ${myScore}:${oppScore}로 ${won ? "승리했습니다" : "패배했습니다"}${otTag}. ${top ? `${top.name} 선수가 ${top.pts}득점으로 이날 경기 최고 활약을 펼쳤습니다.` : ""}`,
+    { sender: "sportsnews", title: `${prefix}${selectedTeam().name} ${won ? "승" : "패"}, ${opponent.name}전 ${myScore}:${oppScore}` },
+  );
+}
+
+// D리그 경기: 조용히 백그라운드로만 진행 (문자중계·기록 저장 없이 스코어/승패만 반영).
+// 두 팀 다 D리그 로스터가 5명 이상이어야 실제로 열리고, 부족하면 그 경기는 보류(미진행) 상태로 남는다.
+function simulateDLeagueGame(game) {
+  if (dleagueAvailableCountFor(game.home) < 5 || dleagueAvailableCountFor(game.away) < 5) return;
+  const result = playMatch(game.home, game.away, true);
+  game.homeScore = result.homeScore;
+  game.awayScore = result.awayScore;
+  game.ot = result.ot || 0;
+  game.played = true;
+  applyGameFatigue(result, true); // 컨디션 소모·부상·경기감각 회복(약하게)까지 1군과 동일 로직으로 처리
+  const st = state.dleagueStandings;
+  const add = (teamId, pf, pa) => {
+    const s = st[teamId] || (st[teamId] = { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 });
+    s.pointsFor += pf; s.pointsAgainst += pa;
+    if (pf > pa) s.wins += 1; else s.losses += 1;
+  };
+  add(game.home, game.homeScore, game.awayScore);
+  add(game.away, game.awayScore, game.homeScore);
+}
+
+// 오늘까지 도래한 D리그 경기를 전부 진행 (1군과 같은 날짜 진행 흐름에 맞춰 호출)
+function advanceDLeagueSchedule() {
+  (state.dleagueSchedule || []).filter((g) => !g.played && g.day <= state.day).forEach((g) => simulateDLeagueGame(g));
 }
 
 // 문자중계는 최근 10경기만 보관 (세이브 용량 관리)
@@ -3361,7 +3769,10 @@ function startPlayoffs() {
     ],
     results: [],
   };
-  addNews(`정규시즌 종료! 6강 플레이오프 대진: ${teamById(order[2]).name} vs ${teamById(order[5]).name}, ${teamById(order[3]).name} vs ${teamById(order[4]).name}`);
+  addNews(
+    `정규시즌이 모두 마무리됐습니다. 6강 플레이오프 대진이 확정됐습니다: ${teamById(order[2]).name} vs ${teamById(order[5]).name}, ${teamById(order[3]).name} vs ${teamById(order[4]).name}.`,
+    { sender: "sportsnews", title: "플레이오프 대진 확정", priority: "important" },
+  );
 }
 
 function makeSeries(high, low, target) {
@@ -3387,7 +3798,10 @@ function finishSeriesGame(series, game) {
   if (series.highWins >= series.target) series.winner = series.high;
   else if (series.lowWins >= series.target) series.winner = series.low;
   if (series.winner) {
-    addNews(`[${state.playoffs.stage}] ${teamById(series.winner).name} 시리즈 승리 (${series.highWins}:${series.lowWins})`);
+    addNews(
+      `${state.playoffs.stage}에서 ${teamById(series.winner).name}이(가) 시리즈 전적 ${series.highWins}승 ${series.lowWins}패로 승리하며 다음 라운드에 진출했습니다.`,
+      { sender: "sportsnews", title: `[${state.playoffs.stage}] ${teamById(series.winner).name} 시리즈 승리` },
+    );
   }
 }
 
@@ -3414,15 +3828,24 @@ function advancePlayoffStage() {
       makeSeries(po.finalists[0], winners[1], 3), // 1위 vs (4·5위전 승자)
       makeSeries(po.finalists[1], winners[0], 3), // 2위 vs (3·6위전 승자)
     ];
-    addNews(`4강 대진 확정: ${teamById(po.finalists[0]).name} vs ${teamById(winners[1]).name}, ${teamById(po.finalists[1]).name} vs ${teamById(winners[0]).name}`);
+    addNews(
+      `4강 플레이오프 대진이 확정됐습니다: ${teamById(po.finalists[0]).name} vs ${teamById(winners[1]).name}, ${teamById(po.finalists[1]).name} vs ${teamById(winners[0]).name}.`,
+      { sender: "sportsnews", title: "4강 대진 확정" },
+    );
   } else if (po.stage === "4강") {
     po.stage = "챔프전";
     po.series = [makeSeries(winners[0], winners[1], 4)];
-    addNews(`챔피언결정전 개막: ${teamById(winners[0]).name} vs ${teamById(winners[1]).name} (7전 4선승제)`);
+    addNews(
+      `챔피언결정전이 개막합니다. ${teamById(winners[0]).name}과(와) ${teamById(winners[1]).name}이(가) 7전 4선승제로 시즌 최종 우승컵을 놓고 격돌합니다.`,
+      { sender: "sportsnews", title: "챔피언결정전 개막", priority: "important" },
+    );
   } else if (po.stage === "챔프전") {
     state.champion = po.series[0].winner;
     state.phase = "offseason";
-    addNews(`🏆 ${teamById(state.champion).name}, 시즌 ${state.season} 챔피언 등극!`);
+    addNews(
+      `${teamById(state.champion).name}이(가) 챔피언결정전을 제패하며 시즌 ${state.season} 챔피언에 등극했습니다. 시즌 내내 이어온 노력이 우승이라는 결실을 맺었습니다.`,
+      { sender: "sportsnews", title: `${teamById(state.champion).name}, 시즌 ${state.season} 챔피언 등극`, priority: "important" },
+    );
     computeSeasonAwards();
   }
 }
@@ -3482,9 +3905,22 @@ function computeSeasonAwards() {
     coach: coachName,
     best5,
   };
-  if (mvpK) addNews(`시즌 ${state.season} 국내선수 MVP: ${mvpK.name}`);
-  if (mvpF) addNews(`시즌 ${state.season} 외국선수 MVP: ${mvpF.name}`);
-  addNews(`감독상: ${coachName}`);
+  if (mvpK) {
+    addNews(
+      `KBL 시상식에서 ${mvpK.name} 선수가 시즌 ${state.season} 국내선수 MVP로 선정되었습니다.`,
+      { sender: "press", title: `시즌 ${state.season} 국내선수 MVP: ${mvpK.name}`, priority: "important" },
+    );
+  }
+  if (mvpF) {
+    addNews(
+      `KBL 시상식에서 ${mvpF.name} 선수가 시즌 ${state.season} 외국선수 MVP로 선정되었습니다.`,
+      { sender: "press", title: `시즌 ${state.season} 외국선수 MVP: ${mvpF.name}`, priority: "important" },
+    );
+  }
+  addNews(
+    `시즌 ${state.season} 감독상 수상자로 ${coachName}이(가) 선정되었습니다.`,
+    { sender: "press", title: "시즌 감독상 발표" },
+  );
 }
 
 function startNewSeason() {
@@ -3515,8 +3951,14 @@ function startNewSeason() {
   state.champion = null;
   state.playerCondition = {}; // 오프시즌 동안 전원 체력 100% 회복
   state.injuries = {};
+  state.sharpness = {}; // 오프시즌 동안 실전 공백은 다들 마찬가지라 중립값으로 리셋
   state.schedule = buildSchedule();
   state.standings = Object.fromEntries(
+    teams.map((team) => [team.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }]),
+  );
+  // D리그 로스터 배정(누가 2군인지)은 시즌이 바뀌어도 유지, 일정/순위만 새로 편성
+  state.dleagueSchedule = buildDLeagueSchedule();
+  state.dleagueStandings = Object.fromEntries(
     teams.map((team) => [team.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }]),
   );
   state.teamStats = {};
@@ -3525,7 +3967,10 @@ function startNewSeason() {
   state.poPlayerStats = {};
   state.morale = 62;
   state.stamina = 84;
-  addNews(`시즌 ${state.season} 개막! 새 일정이 편성되었습니다.`);
+  addNews(
+    `시즌 ${state.season}이 개막합니다. 10개 구단의 새 일정이 편성되었으며, 모든 팀이 새로운 각오로 시즌을 준비하고 있습니다.`,
+    { sender: "sportsnews", title: `시즌 ${state.season} 개막`, priority: "important" },
+  );
 }
 
 function managerBoost() {
@@ -3599,9 +4044,30 @@ function lastGameRecordsHtml() {
     .join("");
 }
 
-function addNews(message) {
-  state.news.push(message);
-  state.news = state.news.slice(-12);
+function addNews(body, opts = {}) {
+  const sender = opts.sender || "front";
+  const meta = newsMetaOf(sender);
+  state.newsSeq = (state.newsSeq || 0) + 1;
+  state.news.push({
+    id: `n${state.newsSeq}`,
+    day: state.day,
+    season: state.season,
+    sender,
+    title: opts.title || meta.tag,
+    body,
+    read: false,
+    priority: opts.priority || "normal",
+    link: opts.link || null,
+  });
+  state.news = state.news.slice(-60);
+}
+
+function unreadNewsCount() {
+  return (state.news || []).reduce((n, item) => n + (item.read ? 0 : 1), 0);
+}
+
+function markAllNewsRead() {
+  (state.news || []).forEach((item) => { item.read = true; });
 }
 
 function randomBetween(min, max) {

@@ -1,3 +1,10 @@
+@font-face {
+  font-family: "GZMain";
+  src: url("fonts/gzmain.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
   --ink: #17202a;
@@ -13,23 +20,43 @@
   --gold: #d49a22;
   --green: #287d45;
   --shadow: 0 16px 40px rgba(23, 32, 42, 0.12);
+
+  /* 게임 화면 공용 "떠 있는 카드" 표면 스타일 — 상단바/탭바/좌측바/카드섹션이 전부 동일하게 사용 */
+  --surface-bg: rgba(255, 255, 255, 0.05);
+  --surface-border: rgba(255, 255, 255, 0.09);
+  --surface-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
+  --surface-radius: 4px;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-width: none; /* Firefox */
+}
+
+html::-webkit-scrollbar {
+  display: none; /* Chrome/Edge: 화면 가장자리 스크롤바를 숨겨 게임 화면처럼 보이게 함 */
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
   color: var(--ink);
   background: var(--paper);
   font-family:
+    "GZMain",
     "Segoe UI",
     "Malgun Gothic",
     system-ui,
     sans-serif;
+}
+
+body::-webkit-scrollbar {
+  display: none;
 }
 
 button,
@@ -1769,19 +1796,18 @@ tr:last-child td {
   grid-template-columns: 154px minmax(0, 1fr);
   min-height: 100vh;
   color: #f7f7f7;
-  background:
-    radial-gradient(circle at 8% 18%, rgba(255, 90, 31, 0.12), transparent 22%),
-    linear-gradient(135deg, #17181d, #202024 48%, #15161a);
+  padding: 8px;
+  gap: 8px;
+  background: linear-gradient(160deg, #1c1d20, #26272b 55%, #18191b);
 }
 
 .app-shell .sidebar {
   gap: 12px;
-  padding: 10px 0 14px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.08), transparent 14%),
-    repeating-radial-gradient(circle at 12px 12px, rgba(95, 76, 170, 0.28) 0 4px, transparent 4px 22px),
-    #181824;
+  padding: 16px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
+  background: var(--surface-bg);
 }
 
 .club-crest {
@@ -1851,21 +1877,124 @@ tr:last-child td {
   content: "";
 }
 
+/* ── 게임 화면 전용 타이포그래피: 전부 GZMain, 제목/수치류만 굵게 ── */
+.club-title h2,
+.metric-card strong,
+.app-shell .nav-button,
+.club-crest,
+.search-strip strong,
+.topbar-status strong,
+.home-panel h3,
+.panel h3,
+.rating-pill,
+.status-pill {
+  font-family: "GZMain", sans-serif;
+  font-weight: 700;
+}
+
+/* ── 게임 화면 전반 다듬기: 부드러운 전환, 카드 입체감, 인터랙션 피드백 ── */
+.app-shell .nav-button,
+.top-action-button,
+.footer-button,
+.mini-button,
+.tab-button,
+.plink,
+.squad-tag,
+.rating-pill,
+.status-pill,
+input,
+select {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+}
+
+.app-shell .nav-button.active::after {
+  transition: none;
+}
+
+.club-crest {
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+}
+
+.home-panel {
+  border: 1px solid var(--surface-border);
+}
+
+.home-panel table tbody tr:hover,
+.table-wrap table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.rating-pill,
+.status-pill,
+.squad-tag {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* 상단바 통합 진행 버튼 */
+.top-action-button {
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(201, 134, 35, 0.28);
+}
+
+.top-action-button:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 8px 20px rgba(201, 134, 35, 0.38);
+}
+
+.top-action-button:active {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: 0 3px 10px rgba(201, 134, 35, 0.28);
+}
+
+.footer-button {
+  padding: 6px 14px;
+  border-radius: 5px;
+}
+
+.footer-button:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.footer-button.subtle {
+  border-color: rgba(255, 165, 31, 0.35);
+  color: #ffcf94;
+  background: rgba(255, 165, 31, 0.08);
+}
+
+.footer-button.subtle:hover {
+  border-color: rgba(255, 165, 31, 0.6);
+  background: rgba(255, 165, 31, 0.16);
+  color: #fff;
+}
+
+.mini-button:hover {
+  filter: brightness(1.1);
+}
+
+.app-shell .nav-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .main-panel {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  min-height: 100vh;
+  gap: 8px;
+  min-height: 0;
   padding: 0;
-  background: #1c1d20;
+  background: transparent;
 }
 
 .game-topbar {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 330px;
+  grid-template-columns: 280px minmax(0, 1fr) 270px;
   align-items: center;
   min-height: 52px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(18, 18, 20, 0.96);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
+  background: var(--surface-bg);
 }
 
 .club-title {
@@ -1901,6 +2030,7 @@ tr:last-child td {
 
 .topbar-status {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
@@ -1910,11 +2040,13 @@ tr:last-child td {
 .topbar-status span {
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .topbar-status strong {
   color: #ffa51f;
-  font-size: 16px;
+  font-size: 15px;
+  white-space: nowrap;
 }
 
 .top-action-button {
@@ -1924,6 +2056,7 @@ tr:last-child td {
   color: #fff;
   background: linear-gradient(180deg, #c98623, #a86911);
   font-weight: 900;
+  white-space: nowrap;
 }
 
 .top-action-button.subtle {
@@ -1937,8 +2070,10 @@ tr:last-child td {
   gap: 20px;
   min-height: 38px;
   padding: 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #1b1b1e;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
+  background: var(--surface-bg);
 }
 
 .tab-button {
@@ -1954,9 +2089,41 @@ tr:last-child td {
   border-bottom-color: #ffa51f;
 }
 
+.tab-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.tab-icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tab-icon-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.tab-icon-button.active {
+  background: color-mix(in srgb, var(--team-color, #ffa51f) 35%, transparent);
+  color: #fff;
+}
+
 .game-content-shell {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
+  gap: 8px;
   min-height: 0;
 }
 
@@ -1970,9 +2137,12 @@ tr:last-child td {
 
 .inbox-panel {
   min-height: 0;
+  min-width: 0;
   padding: 14px 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: #191a1d;
+  border: 1px solid var(--surface-border);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
+  background: var(--surface-bg);
 }
 
 .read-next-button {
@@ -2009,48 +2179,96 @@ tr:last-child td {
 }
 
 .inbox-item {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   border: 0;
-  border-left: 4px solid transparent;
+  border-left: 4px solid var(--sender-color, transparent);
   padding: 12px;
   color: #fff;
   text-align: left;
   background: transparent;
+  cursor: pointer;
 }
 
 .inbox-item + .inbox-item {
   border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
+.inbox-item:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
 .inbox-item.active {
-  border-left-color: #ffa51f;
   background: rgba(154, 111, 42, 0.42);
 }
 
 .inbox-item span {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 12px;
+  color: var(--sender-color, rgba(255, 255, 255, 0.84));
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .inbox-item em {
-  color: #fff;
+  color: #ffa51f;
   font-style: normal;
+  font-size: 11px;
+  text-transform: none;
+  font-weight: 700;
+}
+
+.inbox-item .inbox-item-title {
+  display: block;
+  margin-top: 5px;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.inbox-item.unread .inbox-item-title::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #ffa51f;
 }
 
 .inbox-item p {
-  margin: 6px 0 0;
-  line-height: 1.35;
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .view-root {
   min-width: 0;
-  padding: 28px 20px 30px;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02), transparent 26%),
-    #1d1e20;
+  padding: 4px 2px;
+  background: transparent;
   overflow: auto;
+}
+
+/* BG 아이콘 토글: 현재 팀 아이덴티티 컬러를 반영한 그라디언트 배경.
+   상단바/탭바/좌측바/카드들은 전부 반투명 --surface-bg라서 이 캔버스 색 위에서
+   자연스럽게 같이 물듭니다 (별도 오버라이드 불필요). */
+.app-shell.team-bg {
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--team-color, #666) 45%, #1c1d20),
+    color-mix(in srgb, var(--team-color, #666) 20%, #26272b) 55%,
+    #15161a
+  );
 }
 
 .mail-article {
@@ -2191,9 +2409,11 @@ tr:last-child td {
   justify-content: flex-end;
   gap: 10px;
   min-height: 34px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
   padding: 0 10px;
-  background: rgba(18, 18, 20, 0.96);
+  background: var(--surface-bg);
   color: rgba(255, 255, 255, 0.8);
   font-size: 12px;
 }
@@ -2224,8 +2444,9 @@ tr:last-child td {
 .home-schedule,
 .home-news,
 .home-panel {
-  border-radius: 5px;
-  background: #202123;
+  border-radius: var(--surface-radius);
+  background: var(--surface-bg);
+  box-shadow: var(--surface-shadow);
 }
 
 .home-versus {
@@ -2598,8 +2819,10 @@ tr:last-child td {
 .view-root .lineup-slot,
 .view-root .tactic-box,
 .view-root .metric-card {
-  background: #242628;
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--surface-bg);
+  border-color: var(--surface-border);
+  border-radius: var(--surface-radius);
+  box-shadow: var(--surface-shadow);
   color: rgba(255, 255, 255, 0.88);
 }
 

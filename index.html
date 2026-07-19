@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>KBL Manager</title>
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#000d3d" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
     <link rel="stylesheet" href="styles.css?v=home-roster-1" />
   </head>
   <body>
@@ -179,24 +183,37 @@
           <div class="topbar-status">
             <span id="seasonLabel">시즌 1</span>
             <strong id="dateChip">프리시즌</strong>
-            <button id="advanceDay" class="top-action-button">다음 읽기 ››</button>
-            <button id="playNext" class="top-action-button subtle">다음 경기</button>
-            <button id="finishSeason" class="top-action-button subtle" title="남은 정규시즌+플레이오프를 자동으로 진행">시즌 종료 ⏭</button>
+            <button id="continueButton" class="top-action-button">다음 읽기 ›</button>
           </div>
         </header>
 
         <div class="game-tabs">
-          <button class="tab-button active">수신함</button>
-          <button class="tab-button">소셜 피드</button>
-          <button class="tab-button">뉴스</button>
-          <button class="tab-button">리그 소식</button>
-          <button class="tab-button">세계 소식</button>
-          <button class="tab-button">이적 시장 뉴스</button>
+          <button class="tab-button" data-category="all">수신함</button>
+          <button class="tab-button" data-category="marketing">소셜 피드</button>
+          <button class="tab-button" data-category="sportsnews">뉴스</button>
+          <button class="tab-button" data-category="front">리그 소식</button>
+          <button class="tab-button" data-category="press">세계 소식</button>
+          <button class="tab-button" data-category="scout">이적 시장 뉴스</button>
+          <div class="tab-tools">
+            <button id="lockToggleButton" class="tab-icon-button" title="잠금">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="11" width="16" height="10" rx="2"></rect>
+                <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+              </svg>
+            </button>
+            <button id="bgChangeButton" class="tab-icon-button" title="배경 화면 변경">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                <circle cx="9" cy="10" r="1.8"></circle>
+                <path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.1 0L4 19"></path>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="game-content-shell">
           <aside class="inbox-panel">
-            <button class="read-next-button">다음 읽기 ››</button>
+            <button id="inboxReadNextButton" class="read-next-button">다음 읽기 ››</button>
             <div class="inbox-filter">
               <span>모든 항목</span>
               <button>≡</button>
@@ -209,6 +226,7 @@
         <footer class="game-footer">
           <span id="recordText">0승 0패</span>
           <strong id="rankText">-위</strong>
+          <button id="finishSeason" class="footer-button subtle" title="남은 정규시즌+플레이오프를 자동으로 진행하고 시즌 데이터를 바로 확인합니다">시즌 종료 ⏭</button>
           <button id="saveGame" class="footer-button">저장</button>
           <button id="resetGame" class="footer-button">새 게임</button>
         </footer>
@@ -259,5 +277,10 @@
     <script src="data/game_players.js?v=1"></script>
     <script src="engine.js?v=1"></script>
     <script src="app.js?v=home-roster-1"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+      }
+    </script>
   </body>
 </html>
