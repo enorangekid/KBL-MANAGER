@@ -1,0 +1,6 @@
+# 머신별 캐시 심볼릭 링크 (레포 외부 경로를 가리켜서 다른 환경에서는 무의미함)
+_archive/node_modules
+
+# OS 잡파일
+Thumbs.db
+.DS_Store

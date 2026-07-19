@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KBL Manager</title>
+    <link rel="stylesheet" href="styles.css?v=home-roster-1" />
+  </head>
+  <body>
+    <section id="startScreen" class="start-screen" aria-label="KBL Manager 시작 화면">
+      <div class="start-backdrop">
+        <div class="aurora aurora-one"></div>
+        <div class="aurora aurora-two"></div>
+        <div class="aurora aurora-three"></div>
+      </div>
+
+      <div class="start-panel">
+        <div class="start-logo">
+          <span class="kbl-word">KBL</span>
+          <span class="manager-word">MANAGER</span>
+        </div>
+        <p class="start-season">2026 KBL FRONT OFFICE SIMULATION</p>
+        <div class="start-version">0.1.1</div>
+
+        <div class="recent-save">
+          <div class="save-badge">DB</div>
+          <div>
+            <strong>가장 최근</strong>
+            <span id="startRecentText">원주 DB | 시즌 1 | 1일차</span>
+          </div>
+        </div>
+
+        <div class="start-menu">
+          <button class="start-button primary" id="startNewGame">새로 시작하기</button>
+          <button class="start-button" id="startLoadGame">불러오기</button>
+          <button class="start-button" id="startRecentGame">최근 게임</button>
+          <button class="start-button" id="startSettings">설정</button>
+          <button class="start-button" id="startExit">나가기</button>
+        </div>
+
+        <div id="startSettingsPanel" class="start-settings" hidden>
+          <label>
+            화면 모드
+            <select>
+              <option>전체 화면 느낌</option>
+              <option>창 모드</option>
+            </select>
+          </label>
+          <label>
+            경기 속도
+            <select>
+              <option>보통</option>
+              <option>빠르게</option>
+              <option>천천히</option>
+            </select>
+          </label>
+        </div>
+
+        <footer class="start-footer">
+          <span>v0.1.0</span>
+          <span>KBL PB / KBL YR</span>
+        </footer>
+      </div>
+    </section>
+
+    <section id="teamSelectScreen" class="team-select-screen hidden" aria-label="구단 선택 화면">
+      <div class="team-select-header">
+        <button id="backToStart" class="back-button">←</button>
+        <div>
+          <p class="start-season">NEW CAREER</p>
+          <h2>구단 선택</h2>
+        </div>
+      </div>
+
+      <div class="team-select-layout">
+        <div>
+          <p class="team-select-copy">
+            첫 시즌을 시작할 구단을 선택하세요. 로고 영역은 추후 실제 팀 엠블럼을 넣을 수 있도록 비워뒀습니다.
+          </p>
+          <div id="newTeamGrid" class="team-card-grid"></div>
+        </div>
+
+        <aside class="team-preview">
+          <div class="preview-logo-slot" id="previewLogoSlot">LOGO</div>
+          <p id="previewCity">연고지</p>
+          <h3 id="previewTeamName">팀 선택</h3>
+          <div class="preview-color-row">
+            <span>팀 컬러</span>
+            <strong id="previewColorName">-</strong>
+          </div>
+          <button id="confirmTeam" class="start-button primary">선택하고 시작</button>
+        </aside>
+      </div>
+    </section>
+
+    <section id="managerSetupScreen" class="manager-setup-screen hidden" aria-label="매니저 생성 화면">
+      <div class="team-select-header">
+        <button id="backToTeamSelect" class="back-button">←</button>
+        <div>
+          <p class="start-season">MANAGER PROFILE</p>
+          <h2>매니저 생성</h2>
+        </div>
+      </div>
+
+      <div class="manager-setup-layout">
+        <section class="manager-form-panel">
+          <label class="manager-name-field">
+            매니저 이름
+            <input id="managerNameInput" type="text" value="김감독" maxlength="16" />
+          </label>
+
+          <div class="manager-origin-list" id="managerOriginList"></div>
+        </section>
+
+        <section class="manager-attribute-panel">
+          <div class="panel-heading">
+            <h3>능력치 커스터마이징</h3>
+            <span id="managerPointText">잔여 포인트 0</span>
+          </div>
+          <div id="managerAttributeList" class="manager-attribute-list"></div>
+          <button id="confirmManager" class="start-button primary">커리어 시작</button>
+        </section>
+      </div>
+    </section>
+
+    <section id="careerIntroScreen" class="career-intro-screen hidden" aria-label="커리어 시작 안내">
+      <div class="intro-office-bg">
+        <div class="intro-wall-frame jersey"></div>
+        <div class="intro-wall-frame photo one"></div>
+        <div class="intro-wall-frame photo two"></div>
+        <div class="intro-table"></div>
+        <div class="intro-chair left"></div>
+        <div class="intro-chair right"></div>
+      </div>
+
+      <header class="intro-topbar">
+        <button id="introBack" class="intro-back-button">←</button>
+        <strong>KM</strong>
+        <button id="introNext" class="intro-next-button">다음 ›</button>
+      </header>
+
+      <main id="introContent" class="intro-content"></main>
+    </section>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="club-crest" id="clubCrest">KM</div>
+        <label class="team-picker">
+          <span>내 구단</span>
+          <select id="teamSelect"></select>
+        </label>
+        <nav class="main-nav" aria-label="게임 메뉴">
+          <button class="nav-button active" data-view="dashboard">홈</button>
+          <button class="nav-button" data-view="inbox">수신함</button>
+          <button class="nav-button" data-view="roster">선수단</button>
+          <button class="nav-button" data-view="lineup">선수단 개요</button>
+          <button class="nav-button" data-view="tactics">전술</button>
+          <button class="nav-button" data-view="training">훈련</button>
+          <button class="nav-button" data-view="schedule">주요 일정</button>
+          <button class="nav-button" data-view="league">대회</button>
+          <button class="nav-button" data-view="records">기록</button>
+          <button class="nav-button" data-view="office">구단 정보</button>
+          <button class="nav-button" data-view="office">구단 비전</button>
+          <button class="nav-button" data-view="office">재정</button>
+          <button class="nav-button" data-view="training">육성 센터</button>
+        </nav>
+      </aside>
+
+      <main class="main-panel">
+        <header class="game-topbar">
+          <div class="club-title">
+            <h2 id="clubName">팀 선택 중</h2>
+            <p id="clubSubtitle">KBL 프리시즌</p>
+          </div>
+          <div class="search-strip">
+            <span>검색</span>
+            <strong id="topSummary">KBL 정규리그 준비 중</strong>
+          </div>
+          <div class="topbar-status">
+            <span id="seasonLabel">시즌 1</span>
+            <strong id="dateChip">프리시즌</strong>
+            <button id="advanceDay" class="top-action-button">다음 읽기 ››</button>
+            <button id="playNext" class="top-action-button subtle">다음 경기</button>
+            <button id="finishSeason" class="top-action-button subtle" title="남은 정규시즌+플레이오프를 자동으로 진행">시즌 종료 ⏭</button>
+          </div>
+        </header>
+
+        <div class="game-tabs">
+          <button class="tab-button active">수신함</button>
+          <button class="tab-button">소셜 피드</button>
+          <button class="tab-button">뉴스</button>
+          <button class="tab-button">리그 소식</button>
+          <button class="tab-button">세계 소식</button>
+          <button class="tab-button">이적 시장 뉴스</button>
+        </div>
+
+        <div class="game-content-shell">
+          <aside class="inbox-panel">
+            <button class="read-next-button">다음 읽기 ››</button>
+            <div class="inbox-filter">
+              <span>모든 항목</span>
+              <button>≡</button>
+            </div>
+            <div id="inboxList" class="inbox-list"></div>
+          </aside>
+          <section id="viewRoot" class="view-root"></section>
+        </div>
+
+        <footer class="game-footer">
+          <span id="recordText">0승 0패</span>
+          <strong id="rankText">-위</strong>
+          <button id="saveGame" class="footer-button">저장</button>
+          <button id="resetGame" class="footer-button">새 게임</button>
+        </footer>
+      </main>
+    </div>
+
+    <template id="dashboardTemplate">
+      <div class="metric-grid">
+        <article class="metric-card">
+          <span>리그 순위</span>
+          <strong data-field="rank">-</strong>
+          <p data-field="rankNote">개막 전입니다.</p>
+        </article>
+        <article class="metric-card">
+          <span>팀 분위기</span>
+          <strong data-field="morale">-</strong>
+          <p>최근 경기와 로테이션 관리에 따라 변합니다.</p>
+        </article>
+        <article class="metric-card">
+          <span>체력</span>
+          <strong data-field="stamina">-</strong>
+          <p>연전이 많을수록 소모됩니다.</p>
+        </article>
+        <article class="metric-card">
+          <span>예산</span>
+          <strong data-field="budget">-</strong>
+          <p>스카우트와 트레이드 재료로 쓰입니다.</p>
+        </article>
+      </div>
+
+      <div class="two-column">
+        <section class="panel">
+          <div class="panel-heading">
+            <h3>오늘의 업무</h3>
+            <button class="mini-button" data-action="staff-meeting">회의</button>
+          </div>
+          <ul class="task-list" data-field="tasks"></ul>
+        </section>
+        <section class="panel">
+          <div class="panel-heading">
+            <h3>최근 소식</h3>
+          </div>
+          <div class="news-feed" data-field="news"></div>
+        </section>
+      </div>
+    </template>
+
+    <script src="data/game_players.js?v=1"></script>
+    <script src="engine.js?v=1"></script>
+    <script src="app.js?v=home-roster-1"></script>
+  </body>
+</html>

@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KBL 선수 에디터</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Malgun Gothic", "Segoe UI", sans-serif; font-size: 14px; color: #222; background: #f5f6f8; height: 100vh; display: flex; flex-direction: column; }
+  header { background: #061b4f; color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin-right: 8px; }
+  header input[type="search"] { padding: 6px 10px; border: none; border-radius: 4px; width: 220px; font-size: 13px; }
+  header button { padding: 6px 12px; border: 1px solid #ffffff55; background: #ffffff22; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  header button:hover { background: #ffffff33; }
+  .layout { display: flex; flex: 1; overflow: hidden; }
+  aside { width: 280px; background: #fff; border-right: 1px solid #ddd; overflow-y: auto; }
+  .team-block > .team-name { padding: 8px 12px; background: #eef1f6; font-weight: bold; font-size: 13px; cursor: pointer; border-bottom: 1px solid #e2e5ea; position: sticky; top: 0; }
+  .team-block > .team-name .cnt { color: #888; font-weight: normal; }
+  .plist { list-style: none; }
+  .plist li { padding: 6px 12px 6px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f0f0f0; }
+  .plist li:hover { background: #f0f4ff; }
+  .plist li.active { background: #dbe6ff; font-weight: bold; }
+  .plist li .ovr { font-size: 12px; color: #fff; background: #8a94a6; border-radius: 3px; padding: 1px 6px; min-width: 28px; text-align: center; }
+  .plist li .ovr.hi { background: #1e7e34; }
+  .plist li .ovr.mid { background: #c77b00; }
+  .plist li.edited .nm::after { content: " ●"; color: #d9534f; font-size: 10px; }
+  main { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .empty { color: #999; margin-top: 40px; text-align: center; }
+  .topline { display: flex; align-items: baseline; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+  .topline .pname { font-size: 20px; font-weight: bold; }
+  .ovr-box { font-size: 15px; }
+  .ovr-box b { font-size: 26px; color: #061b4f; }
+  .ovr-box .grade { color: #666; margin-left: 6px; }
+  .topline .actions { margin-left: auto; display: flex; gap: 8px; }
+  .topline .actions button { padding: 5px 10px; border: 1px solid #bbb; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  section.card { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; }
+  section.card h2 { font-size: 13px; color: #061b4f; border-bottom: 2px solid #061b4f; padding-bottom: 5px; margin-bottom: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 14px; }
+  .grid.attrs { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .fld { display: flex; flex-direction: column; gap: 3px; }
+  .fld label { font-size: 11px; color: #777; }
+  .fld .inwrap { display: flex; align-items: center; gap: 4px; }
+  .fld input, .fld select { padding: 5px 7px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 100%; }
+  .fld .unit { font-size: 12px; color: #888; flex-shrink: 0; }
+  .fld input:focus, .fld select:focus { outline: 2px solid #94b0ff; border-color: #94b0ff; }
+  .fld.changed input, .fld.changed select { background: #fff7e0; border-color: #e0b000; }
+  .fld .orig { font-size: 10px; color: #b06f00; visibility: hidden; }
+  .fld.changed .orig { visibility: visible; }
+  .fld .krw { font-size: 11px; color: #4a6; min-height: 13px; }
+  /* 선수 사진 (556x720 비율) */
+  .pcard { display: flex; gap: 16px; align-items: flex-start; }
+  .pcard .grid { flex: 1; }
+  .pphoto { width: 167px; height: 216px; flex-shrink: 0; border: 1px solid #d5d9e0; border-radius: 6px; background: #eef1f6; display: flex; align-items: center; justify-content: center; color: #98a0ad; font-size: 11px; text-align: center; overflow: hidden; line-height: 1.6; }
+  .pphoto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .attr-group { margin-bottom: 12px; }
+  .attr-group h3 { font-size: 12px; color: #fff; background: #3d5390; display: inline-block; padding: 2px 10px; border-radius: 3px; margin-bottom: 8px; }
+  .attr-val { display: flex; align-items: center; gap: 6px; }
+  .attr-val input[type="range"] { flex: 1; }
+  .attr-val input[type="number"] { width: 58px; }
+  footer { padding: 6px 16px; background: #eef1f6; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  /* 전체 목록 테이블 (고정폭, 가로 스크롤 없음) */
+  .tbl-wrap { overflow-y: auto; overflow-x: hidden; max-height: calc(100vh - 175px); border: 1px solid #ddd; background: #fff; border-radius: 6px; }
+  table.all { border-collapse: collapse; font-size: 11px; white-space: nowrap; table-layout: fixed; width: 100%; }
+  table.all th, table.all td { padding: 3px 2px; border-bottom: 1px solid #eee; text-align: center; overflow: hidden; text-overflow: ellipsis; }
+  table.all th { position: sticky; top: 0; background: #061b4f; color: #fff; cursor: pointer; user-select: none; z-index: 2; font-size: 11px; }
+  table.all th:hover { background: #12307a; }
+  table.all th.sorted { background: #2a4aa0; }
+  table.all td.nm { text-align: left; font-weight: bold; cursor: pointer; padding-left: 6px; }
+  table.all td.nm:hover { color: #1447d0; text-decoration: underline; }
+  table.all tr:hover td { background: #f0f4ff; }
+  table.all td.hi { color: #1e7e34; font-weight: bold; }
+  table.all td.lo { color: #b0b0b0; }
+  table.all td.pend { background: #ffe9b8 !important; font-weight: bold; }
+  table.all .savebtn { border: 1px solid #e0b000; background: #fff7e0; border-radius: 3px; cursor: pointer; font-size: 11px; padding: 0 3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>KBL 선수 에디터</h1>
+  <input type="search" id="searchBox" placeholder="선수 이름 검색..." />
+  <button id="btnTable">전체 목록</button>
+  <button id="btnExport">JSON 내보내기</button>
+  <button id="btnImport">JSON 불러오기</button>
+  <input type="file" id="importFile" accept=".json,application/json" style="display:none" />
+  <button id="btnResetAll">전체 수정 초기화</button>
+  <span id="editCount" style="font-size:12px; color:#cfd8ff;"></span>
+</header>
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main id="editorPane"><div class="empty">왼쪽에서 팀을 열고 선수를 선택하거나, 상단에서 검색하세요.</div></main>
+</div>
+<footer>수정 내용은 브라우저(localStorage)에 자동 저장됩니다. 최종 반영은 "JSON 내보내기" 후 전달하세요. 노란 칸 = 원본과 다른 값</footer>
+
+<script src="players_data.js"></script>
+<script>
+"use strict";
+// ===== 상수 =====
+const ATTR_GROUPS = [
+  { title: "마무리", items: [["근거리슛","근거리 슛"],["드라이빙레이업","드라이빙 레이업"],["드라이빙덩크","드라이빙 덩크"],["스탠딩덩크","스탠딩 덩크"],["포스트컨트롤","포스트 컨트롤"]] },
+  { title: "슈팅", items: [["중거리슛","중거리 슛"],["3점슛","3점 슛"],["자유투","자유투"]] },
+  { title: "플레이메이킹", items: [["패스정확도","패스 정확도"],["볼핸들링","볼 핸들링"],["드리블속도","드리블 속도"]] },
+  { title: "수비", items: [["골밑수비","골밑 수비"],["외곽수비","외곽 수비"],["스틸","스틸"],["블록","블록"]] },
+  { title: "리바운드", items: [["공격리바운드","공격 리바운드"],["수비리바운드","수비 리바운드"]] },
+  { title: "피지컬", items: [["속도","속도"],["민첩성","민첩성"],["힘","힘"],["점프력","점프력"],["체력","체력"]] }
+];
+const HIDDEN_KEYS = ["현재능력","잠재능력","팀워크","리더십","꾸준함","부상빈도","프로의식","야망","충성도","자존감","강심장","더티플레이"];
+const POSITIONS = ["PG","SG","SF","PF","C"];
+const MILITARY_OPTS = ["","미필","군필","상무","사회복무요원","전시근로역","면제","현역"];
+const OVR_WEIGHTS = {
+  PG: {"패스정확도":1.9,"볼핸들링":1.8,"3점슛":1.25,"자유투":0.65,"스틸":1.15,"외곽수비":1.25,"속도":1.15,"민첩성":1.1,"체력":0.8,"드라이빙레이업":0.95,"중거리슛":0.65,"근거리슛":0.45,"수비리바운드":0.25,"골밑수비":0.2},
+  SG: {"3점슛":1.75,"중거리슛":1.1,"드라이빙레이업":1.0,"볼핸들링":1.1,"패스정확도":0.95,"스틸":1.05,"외곽수비":1.2,"속도":1.0,"민첩성":1.0,"체력":0.75,"자유투":0.65,"근거리슛":0.55,"수비리바운드":0.35},
+  SF: {"3점슛":1.4,"중거리슛":1.2,"드라이빙레이업":1.0,"근거리슛":0.7,"수비리바운드":1.0,"스틸":0.9,"외곽수비":1.2,"골밑수비":0.6,"힘":0.6,"속도":0.7,"점프력":0.6,"체력":0.7,"패스정확도":0.5},
+  PF: {"근거리슛":1.2,"포스트컨트롤":1.15,"공격리바운드":1.15,"수비리바운드":1.25,"골밑수비":1.2,"블록":0.95,"힘":1.1,"점프력":0.75,"체력":0.65,"중거리슛":0.65,"3점슛":0.55,"외곽수비":0.55,"드라이빙덩크":0.75},
+  // V7: C에 스틸 0.45 추가, 패스정확도 0.35 -> 0.6
+  C: {"근거리슛":1.45,"포스트컨트롤":1.35,"공격리바운드":1.25,"수비리바운드":1.45,"골밑수비":1.55,"블록":1.25,"힘":1.2,"점프력":0.75,"체력":0.6,"스탠딩덩크":0.9,"드라이빙덩크":0.65,"패스정확도":0.6,"스틸":0.45,"3점슛":0.25,"볼핸들링":0.2,"외곽수비":0.35}
+};
+const LS_KEY = "kbl_editor_edits_v3";
+
+// ===== 원본 데이터 정규화 =====
+function parseSalaryKRW(s) {
+  if (s == null) return "";
+  s = String(s).trim().replace(/\s/g, "").replace(/원$/, "");
+  if (s === "") return "";
+  if (/^[\d,]+$/.test(s)) return parseInt(s.replace(/,/g, "")) || "";
+  const m = s.match(/^(?:(\d+)억)?(?:(\d+)천)?(?:(\d+)백)?(\d+)?만?$/);
+  if (!m) return "";
+  let man = 0;
+  if (m[1]) man += parseInt(m[1]) * 10000;
+  if (m[2]) man += parseInt(m[2]) * 1000;
+  if (m[3]) man += parseInt(m[3]) * 100;
+  if (m[4]) man += parseInt(m[4]);
+  return man > 0 ? man * 10000 : "";
+}
+function fmtManPart(man) {
+  const ch = Math.floor(man / 1000), rest = man % 1000;
+  if (rest === 0) return ch ? ch + "천만" : "";
+  const bk = Math.floor(rest / 100), r2 = rest % 100;
+  if (r2 === 0) return (ch ? ch + "천" : "") + (bk ? bk + "백" : "") + "만";
+  return man.toLocaleString("ko-KR") + "만";
+}
+function fmtMoney(n, currency) {
+  n = parseInt(n);
+  if (!n || isNaN(n)) return "";
+  if (currency === "달러") {
+    const man = n / 10000;
+    if (Number.isInteger(man)) return man.toLocaleString("ko-KR") + "만 달러 ($" + n.toLocaleString("en-US") + ")";
+    return "$" + n.toLocaleString("en-US");
+  }
+  const eok = Math.floor(n / 100000000);
+  const man = Math.floor((n % 100000000) / 10000);
+  const rest = n % 10000;
+  if (rest !== 0) return n.toLocaleString("ko-KR") + "원";
+  let s = "";
+  if (eok) s += eok + "억";
+  if (man) s += (eok ? " " : "") + fmtManPart(man);
+  return (s || "0") + "원";
+}
+function toDateStr(s) {
+  if (!s) return "";
+  s = String(s).trim().replace(/\./g, "-").replace(/-$/, "");
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return "";
+  return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+}
+function normalize(raw) {
+  const p = JSON.parse(JSON.stringify(raw));
+  // 포지션 "PF/C" -> 주/보조
+  const posParts = String(p.포지션 || "").split(/[\/\-]/).map(x => x.trim()).filter(x => POSITIONS.includes(x));
+  p.주포지션 = p.주포지션 || posParts[0] || "SG";
+  p.보조포지션 = posParts[1] || "";
+  // 국적 "미국/필리핀" -> 1/2
+  const natParts = String(p.국적 || "").split("/").map(x => x.trim()).filter(Boolean);
+  p.국적1 = natParts[0] || "";
+  p.국적2 = natParts[1] || "";
+  // 계약기간 "2021.06.01 - 2025.05.31" -> 시작/종료
+  const cp = String(p.계약기간 || "").split(/\s*[-~]\s*(?=\d{4})/);
+  p.계약시작 = toDateStr(cp[0]);
+  p.계약종료 = toDateStr(cp[1]);
+  p.생년월일 = toDateStr(p.생년월일);
+  // 연봉 -> 숫자 + 통화 ("19만달러" 같은 달러 표기 지원, 외국인은 KBL 규정상 달러 기준)
+  const rawSal = String(p.연봉 || "").trim();
+  if (rawSal.includes("달러") || rawSal.startsWith("$")) {
+    p.연봉통화 = "달러";
+    p.연봉액 = parseSalaryKRW(rawSal.replace(/달러|\$/g, "").trim());
+  } else {
+    p.연봉통화 = (rawSal === "" && p.국적1 && p.국적1 !== "대한민국") ? "달러" : "원";
+    p.연봉액 = parseSalaryKRW(rawSal);
+  }
+  delete p.포지션; delete p.국적; delete p.계약기간; delete p.연봉;
+  return p;
+}
+const original = PLAYERS_DATA.map(normalize);
+let edits = {};
+try { edits = JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch (e) { edits = {}; }
+// 선수번호는 수정불가: 과거 저장본에 ID가 없거나 달라도 항상 원본 값으로 덮어씀
+for (const k in edits) { if (original[k]) edits[k].선수ID = original[k].선수ID; }
+// 히든 능력치: 수정본이 빈값이고 원본에 새 값이 들어온 경우 원본 값으로 보충 (멘탈 데이터 일괄 반영분)
+for (const k in edits) {
+  const o = original[k];
+  if (!o || !o.히든 || !edits[k].히든) continue;
+  for (const hk of HIDDEN_KEYS) {
+    if ((edits[k].히든[hk] === "" || edits[k].히든[hk] == null) && o.히든[hk] !== "" && o.히든[hk] != null) {
+      edits[k].히든[hk] = o.히든[hk];
+    }
+  }
+}
+function current(i) { return edits[i] ? edits[i] : original[i]; }
+function ensureEdit(i) {
+  if (!edits[i]) edits[i] = JSON.parse(JSON.stringify(original[i]));
+  return edits[i];
+}
+function saveEdits() {
+  recalcOVR(); // V7: 편집 반영 시 포지션 μ,σ 재계산
+  localStorage.setItem(LS_KEY, JSON.stringify(edits));
+  document.getElementById("editCount").textContent = Object.keys(edits).length ? `수정된 선수: ${Object.keys(edits).length}명` : "";
+}
+
+// ===== OVR 계산 =====
+function parseMin(minStr) {
+  if (!minStr) return 0;
+  const s = String(minStr);
+  if (s.includes(":")) { const [m, sec] = s.split(":"); return (parseFloat(m) || 0) + (parseFloat(sec) || 0) / 60; }
+  return parseFloat(s) || 0;
+}
+// ===== OVR V8: 단순 절대평가 =====
+// OVR = 1.25 x (포지션 가중평균 + 포지션보정) - 16   (60~99 클램프)
+// - 결측(빈값) 능력치는 가중평균에서 제외
+// - 유효 가중치 60% 미만이면 "작업중"(null)
+// - 다른 선수/출전기록의 영향 없음: 설정한 능력치가 곧 OVR
+function rawWeighted(p) {
+  const w = OVR_WEIGHTS[p.주포지션] || OVR_WEIGHTS.SG;
+  let sum = 0, tot = 0, wtotal = 0;
+  for (const k in w) {
+    wtotal += w[k];
+    const rv = p.능력치[k];
+    const v = Number(rv);
+    if (rv == null || rv === "" || isNaN(v)) continue;
+    sum += v * w[k];
+    tot += w[k];
+  }
+  if (wtotal === 0 || tot / wtotal < 0.6) return null;
+  return sum / tot;
+}
+const POS_ADJ = { PG: 0, SG: 4, SF: 6, PF: 4, C: 2 }; // 가중치 구조상 포지션별 원점수 차이 보정
+function calcOVR(p) {
+  const raw = rawWeighted(p);
+  if (raw == null) return null;
+  return Math.round(Math.max(60, Math.min(99, 1.25 * (raw + (POS_ADJ[p.주포지션] || 0)) - 16)));
+}
+function ovrFromStats(p) { return calcOVR(p); } // 미리보기 호환용
+let ovrMap = [];
+function recalcOVR() { ovrMap = original.map((_, i) => calcOVR(current(i))); }
+function ovrOf(i) { return ovrMap[i]; }
+function grade(ovr) {
+  if (ovr >= 95) return "MVP급";
+  if (ovr >= 90) return "시즌베스트급";
+  if (ovr >= 80) return "주전라인업급";
+  if (ovr >= 75) return "로테이션급";
+  if (ovr >= 70) return "후보급";
+  return "예비/신인급";
+}
+
+// ===== 사이드바 =====
+let selectedIdx = -1;
+let openTeams = new Set([TEAMS[0]]);
+function renderSidebar() {
+  const q = document.getElementById("searchBox").value.trim();
+  const box = document.getElementById("sidebar");
+  box.innerHTML = "";
+  for (const team of TEAMS) {
+    const idxs = [];
+    for (let i = 0; i < original.length; i++) {
+      const p = current(i);
+      if (p.팀 !== team) continue;
+      if (q && !String(p.선수).includes(q)) continue;
+      idxs.push(i);
+    }
+    if (q && idxs.length === 0) continue;
+    const block = document.createElement("div");
+    block.className = "team-block";
+    const head = document.createElement("div");
+    head.className = "team-name";
+    head.innerHTML = `${team} <span class="cnt">(${idxs.length})</span>`;
+    head.onclick = () => { openTeams.has(team) ? openTeams.delete(team) : openTeams.add(team); renderSidebar(); };
+    block.appendChild(head);
+    if (openTeams.has(team) || q) {
+      idxs.sort((a, b) => {
+        const oa = ovrOf(a), ob = ovrOf(b);
+        return (ob == null ? -1 : ob) - (oa == null ? -1 : oa);
+      });
+      const ul = document.createElement("ul");
+      ul.className = "plist";
+      for (const i of idxs) {
+        const p = current(i);
+        const ovr = ovrOf(i);
+        const li = document.createElement("li");
+        if (i === selectedIdx) li.classList.add("active");
+        if (edits[i]) li.classList.add("edited");
+        const cls = ovr == null ? "" : ovr >= 85 ? "hi" : ovr >= 75 ? "mid" : "";
+        li.innerHTML = `<span class="nm">${p.선수}</span><span class="ovr ${cls}">${ovr == null ? "작업중" : ovr}</span>`;
+        li.onclick = () => { selectedIdx = i; viewMode = "editor"; renderSidebar(); renderEditor(); };
+        ul.appendChild(li);
+      }
+      block.appendChild(ul);
+    }
+    box.appendChild(block);
+  }
+}
+
+// ===== 필드 생성 =====
+function fieldChanged(i, path) {
+  if (!edits[i]) return false;
+  const get = (obj) => path.reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  return String(get(edits[i]) ?? "") !== String(get(original[i]) ?? "");
+}
+function makeField(labelText, value, origValue, onChange, opts) {
+  opts = opts || {};
+  const wrap = document.createElement("div");
+  wrap.className = "fld" + (opts.changed ? " changed" : "");
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  wrap.appendChild(label);
+  const inwrap = document.createElement("div");
+  inwrap.className = "inwrap";
+  let input;
+  if (opts.select) {
+    input = document.createElement("select");
+    const optList = [...opts.select];
+    if (value != null && value !== "" && !optList.includes(String(value))) optList.push(String(value));
+    for (const o of optList) {
+      const op = document.createElement("option");
+      op.value = o; op.textContent = o === "" ? "(없음)" : o;
+      if (String(o) === String(value ?? "")) op.selected = true;
+      input.appendChild(op);
+    }
+  } else if (opts.checkbox) {
+    input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = value === true || value === "true" || value === "O";
+    input.style.width = "20px";
+    input.style.height = "20px";
+  } else {
+    input = document.createElement("input");
+    input.type = opts.date ? "date" : opts.number ? "number" : "text";
+    if (opts.number) { if (opts.min != null) input.min = opts.min; if (opts.max != null) input.max = opts.max; }
+    input.value = value ?? "";
+  }
+  input.addEventListener("change", () => onChange(opts.checkbox ? input.checked : input.value));
+  inwrap.appendChild(input);
+  if (opts.unit) {
+    const u = document.createElement("span");
+    u.className = "unit";
+    u.textContent = opts.unit;
+    inwrap.appendChild(u);
+  }
+  wrap.appendChild(inwrap);
+  if (opts.moneyFmt) {
+    const k = document.createElement("span");
+    k.className = "krw";
+    k.textContent = opts.moneyFmt(value);
+    input.addEventListener("input", () => { k.textContent = opts.moneyFmt(input.value); });
+    wrap.appendChild(k);
+  }
+  const orig = document.createElement("span");
+  orig.className = "orig";
+  orig.textContent = `원본: ${origValue === "" || origValue == null ? "(빈값)" : origValue}`;
+  wrap.appendChild(orig);
+  return wrap;
+}
+
+// ===== 전체 목록 (능력치별 정렬/필터/일괄수정) =====
+let viewMode = "editor";
+let sortKey = "OVR", sortDir = -1;
+let tableTeamFilter = "", tablePosFilter = "";
+let pending = {}; // i -> {능력치키: 값} : 💾 클릭 전까지 미반영
+const FLAT_ATTRS = ATTR_GROUPS.flatMap(g => g.items);
+const ATTR_ABBR = { "근거리슛":"근거리","드라이빙레이업":"레이업","드라이빙덩크":"드라덩","스탠딩덩크":"스탠덩","포스트컨트롤":"포스트","중거리슛":"중거리","3점슛":"3점","자유투":"자유투","패스정확도":"패스","볼핸들링":"핸들링","드리블속도":"드리블","골밑수비":"골밑수","외곽수비":"외곽수","스틸":"스틸","블록":"블록","공격리바운드":"공리바","수비리바운드":"수리바","속도":"속도","민첩성":"민첩","힘":"힘","점프력":"점프","체력":"체력" };
+const TEAM_ABBR = { "원주 DB":"DB","서울 삼성":"삼성","고양 소노":"소노","서울 SK":"SK","창원 LG":"LG","안양 정관장":"정관장","수원 KT":"KT","대구 한국가스공사":"가스공사","울산 현대 모비스":"모비스","부산 KCC":"KCC" };
+
+function pendingCount() { return Object.keys(pending).length; }
+function applyPending(i) {
+  if (!pending[i]) return;
+  const e = ensureEdit(i);
+  for (const k in pending[i]) e.능력치[k] = pending[i][k];
+  if (JSON.stringify(edits[i]) === JSON.stringify(original[i])) delete edits[i];
+  delete pending[i];
+  saveEdits();
+}
+function currentWithPending(i) {
+  const p = JSON.parse(JSON.stringify(current(i)));
+  if (pending[i]) for (const k in pending[i]) p.능력치[k] = pending[i][k];
+  return p;
+}
+
+function renderTable() {
+  const pane = document.getElementById("editorPane");
+  const q = document.getElementById("searchBox").value.trim();
+  const wrapOld = pane.querySelector(".tbl-wrap");
+  const st = wrapOld ? [wrapOld.scrollTop, wrapOld.scrollLeft] : [0, 0];
+  pane.innerHTML = "";
+
+  // 필터/안내 바
+  const bar = document.createElement("div");
+  bar.style.cssText = "display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:12px; color:#666; flex-wrap:wrap;";
+  const teamSel = document.createElement("select");
+  teamSel.innerHTML = '<option value="">팀: 전체</option>' + TEAMS.map(t => `<option value="${t}" ${t === tableTeamFilter ? "selected" : ""}>${t}</option>`).join("");
+  teamSel.onchange = () => { tableTeamFilter = teamSel.value; renderTable(); };
+  const posSel = document.createElement("select");
+  posSel.innerHTML = '<option value="">포지션: 전체</option>' + POSITIONS.map(t => `<option value="${t}" ${t === tablePosFilter ? "selected" : ""}>${t}</option>`).join("");
+  posSel.onchange = () => { tablePosFilter = posSel.value; renderTable(); };
+  bar.appendChild(teamSel);
+  bar.appendChild(posSel);
+  const info = document.createElement("span");
+  info.textContent = "셀 클릭=수정 입력 → 💾=반영 · 제목 클릭=정렬 · 이름 클릭=편집화면";
+  bar.appendChild(info);
+  if (pendingCount() > 0) {
+    const btnAll = document.createElement("button");
+    btnAll.textContent = `변경 전체 저장 (${pendingCount()}명)`;
+    btnAll.style.cssText = "padding:3px 10px; border:1px solid #e0b000; background:#fff7e0; border-radius:4px; cursor:pointer; font-weight:bold;";
+    btnAll.onclick = () => { for (const i of Object.keys(pending)) applyPending(i); renderSidebar(); renderTable(); };
+    bar.appendChild(btnAll);
+  }
+  pane.appendChild(bar);
+
+  const wrap = document.createElement("div");
+  wrap.className = "tbl-wrap";
+  const tbl = document.createElement("table");
+  tbl.className = "all";
+
+  // 고정 컬럼폭 (가로 스크롤 방지)
+  const cg = document.createElement("colgroup");
+  const mkCol = (w) => { const c = document.createElement("col"); c.style.width = w; cg.appendChild(c); };
+  mkCol("8%"); mkCol("5.5%"); mkCol("4%"); mkCol("3.8%"); mkCol("3%");
+  const attrW = ((100 - 24.3) / FLAT_ATTRS.length).toFixed(2) + "%";
+  for (let k = 0; k < FLAT_ATTRS.length; k++) mkCol(attrW);
+  tbl.appendChild(cg);
+
+  // 헤더
+  const cols = [["선수","선수","선수"],["팀","팀","팀"],["포지","주포지션","주포지션"],["OVR","OVR","OVR"],["💾",null,"클릭하면 해당 행 변경 반영"], ...FLAT_ATTRS.map(([k, label]) => [ATTR_ABBR[k] || k, k, label])];
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const [label, key, full] of cols) {
+    const th = document.createElement("th");
+    th.textContent = label + (key && sortKey === key ? (sortDir < 0 ? "▼" : "▲") : "");
+    th.title = full;
+    if (key && sortKey === key) th.classList.add("sorted");
+    if (key) {
+      th.onclick = () => {
+        if (sortKey === key) sortDir = -sortDir;
+        else { sortKey = key; sortDir = -1; }
+        renderTable();
+      };
+    } else { th.style.cursor = "default"; }
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  tbl.appendChild(thead);
+
+  // 데이터 필터/정렬
+  const rows = [];
+  for (let i = 0; i < original.length; i++) {
+    const p = current(i);
+    if (q && !String(p.선수).includes(q)) continue;
+    if (tableTeamFilter && p.팀 !== tableTeamFilter) continue;
+    if (tablePosFilter && p.주포지션 !== tablePosFilter) continue;
+    rows.push([i, p]);
+  }
+  const getVal = (i, p) => {
+    if (sortKey === "선수") return p.선수;
+    if (sortKey === "팀") return p.팀;
+    if (sortKey === "주포지션") return p.주포지션;
+    if (sortKey === "OVR") { const o = ovrOf(i); return o == null ? -1 : o; }
+    const n = Number(p.능력치[sortKey]);
+    return isNaN(n) ? -1 : n;
+  };
+  rows.sort((a, b) => {
+    const va = getVal(a[0], a[1]), vb = getVal(b[0], b[1]);
+    if (typeof va === "string" || typeof vb === "string") return sortDir * String(va).localeCompare(String(vb), "ko");
+    return sortDir * (va - vb);
+  });
+
+  const tbody = document.createElement("tbody");
+  for (const [i, p0] of rows) {
+    const p = currentWithPending(i);
+    const tr = document.createElement("tr");
+    // 이름
+    const nm = document.createElement("td");
+    nm.className = "nm";
+    nm.textContent = p.선수 + (edits[i] ? " ●" : "");
+    nm.title = `${p.팀} / ${p.선수} - 클릭하면 편집화면`;
+    nm.onclick = () => { selectedIdx = i; viewMode = "editor"; renderSidebar(); renderEditor(); };
+    tr.appendChild(nm);
+    // 팀(약어)/포지션
+    const tdTeam = document.createElement("td"); tdTeam.textContent = TEAM_ABBR[p.팀] || p.팀; tdTeam.title = p.팀; tr.appendChild(tdTeam);
+    const tdPos = document.createElement("td"); tdPos.textContent = p.주포지션; tdPos.title = p.보조포지션 ? `${p.주포지션}/${p.보조포지션}` : p.주포지션; tr.appendChild(tdPos);
+    // OVR (미반영 변경 있으면 주황 미리보기)
+    const tdOvr = document.createElement("td");
+    const shownOvr = pending[i] ? ovrFromStats(p) : ovrOf(i);
+    tdOvr.textContent = shownOvr == null ? "작업중" : shownOvr;
+    tdOvr.style.fontWeight = "bold";
+    if (pending[i]) tdOvr.classList.add("pend");
+    tr.appendChild(tdOvr);
+    // 저장 아이콘
+    const tdSave = document.createElement("td");
+    if (pending[i]) {
+      const b = document.createElement("button");
+      b.textContent = "💾";
+      b.className = "savebtn";
+      b.title = "이 선수 변경 반영";
+      b.onclick = () => { applyPending(i); renderSidebar(); renderTable(); };
+      tdSave.appendChild(b);
+    } else {
+      tdSave.textContent = "·";
+      tdSave.style.color = "#ccc";
+    }
+    tr.appendChild(tdSave);
+    // 능력치 셀
+    for (const [key, label] of FLAT_ATTRS) {
+      const td = document.createElement("td");
+      const v0 = Number(p.능력치[key]);
+      td.textContent = isNaN(v0) ? "" : v0;
+      td.title = label + " (클릭하여 수정)";
+      if (pending[i] && pending[i][key] !== undefined) td.classList.add("pend");
+      else if (v0 >= 85) td.classList.add("hi");
+      else if (v0 < 55) td.classList.add("lo");
+      td.style.cursor = "pointer";
+      td.onclick = () => {
+        if (td.querySelector("input")) return;
+        const curRaw0 = currentWithPending(i).능력치[key];
+        const cur = (curRaw0 == null || curRaw0 === "" || isNaN(Number(curRaw0))) ? "" : Number(curRaw0);
+        td.textContent = "";
+        const inp = document.createElement("input");
+        inp.type = "number"; inp.min = 25; inp.max = 99; inp.value = cur;
+        inp.style.cssText = "width:100%; font-size:11px; padding:1px;";
+        td.appendChild(inp);
+        inp.focus(); inp.select();
+        let cancelled = false;
+        const commit = () => {
+          const rawv = String(inp.value).trim();
+          // 빈값 입력 = 결측 처리(작업중 계산에서 제외)
+          const v = rawv === "" ? null : Math.max(25, Math.min(99, parseInt(rawv) || (cur === "" ? 50 : cur)));
+          const curNow = current(i).능력치[key];
+          const same = (v === null)
+            ? (curNow == null || curNow === "" || isNaN(Number(curNow)))
+            : (v === Number(curNow));
+          if (!cancelled && !same) {
+            if (!pending[i]) pending[i] = {};
+            pending[i][key] = v;
+          } else if (!cancelled && pending[i]) {
+            delete pending[i][key];
+            if (Object.keys(pending[i]).length === 0) delete pending[i];
+          }
+          renderTable();
+        };
+        inp.addEventListener("blur", commit);
+        inp.addEventListener("keydown", ev => {
+          if (ev.key === "Enter") inp.blur();
+          if (ev.key === "Escape") { cancelled = true; inp.blur(); }
+        });
+      };
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+  pane.appendChild(wrap);
+  wrap.scrollTop = st[0];
+  wrap.scrollLeft = st[1];
+}
+
+// ===== 에디터 폼 =====
+function renderEditor() {
+  if (viewMode === "table") { renderTable(); return; }
+  const pane = document.getElementById("editorPane");
+  if (selectedIdx < 0) { pane.innerHTML = '<div class="empty">선수를 선택하세요.</div>'; return; }
+  const i = selectedIdx;
+  const p = current(i);
+  const o = original[i];
+  pane.innerHTML = "";
+
+  const top = document.createElement("div");
+  top.className = "topline";
+  const ovr = ovrOf(i);
+  let ageStr = "";
+  if (p.생년월일) {
+    const bd = new Date(p.생년월일);
+    if (!isNaN(bd)) {
+      const now = new Date();
+      let age = now.getFullYear() - bd.getFullYear();
+      if (now < new Date(now.getFullYear(), bd.getMonth(), bd.getDate())) age--;
+      ageStr = `<span style="color:#555; font-size:14px;">(만 ${age}세)</span>`;
+    }
+  }
+  top.innerHTML = `<span class="pname">${p.선수}</span> ${ageStr}
+    <span style="color:#888; font-size:13px; letter-spacing:1px;">${p.선수ID || ""}</span>
+    <span class="ovr-box">OVR <b id="ovrVal">${ovr == null ? "작업중" : ovr}</b><span class="grade" id="gradeVal">${ovr == null ? "-" : grade(ovr)}</span></span>`;
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  const btnReset = document.createElement("button");
+  btnReset.textContent = "이 선수 원본으로";
+  btnReset.onclick = () => { delete edits[i]; saveEdits(); renderSidebar(); renderEditor(); };
+  actions.appendChild(btnReset);
+  top.appendChild(actions);
+  pane.appendChild(top);
+
+  const set = (path, val) => {
+    const e = ensureEdit(i);
+    let obj = e;
+    for (let k = 0; k < path.length - 1; k++) obj = obj[path[k]];
+    obj[path[path.length - 1]] = val;
+    if (JSON.stringify(edits[i]) === JSON.stringify(o)) delete edits[i];
+    saveEdits(); renderSidebar(); renderEditor();
+  };
+
+  // ── 프로필 ──
+  const prof = document.createElement("section");
+  prof.className = "card";
+  prof.innerHTML = "<h2>프로필</h2>";
+  const pcard = document.createElement("div");
+  pcard.className = "pcard";
+  // 선수 사진: photo/face/{선수번호}.png|jpg|jpeg|webp 자동 로드 (556x720 비율)
+  const photo = document.createElement("div");
+  photo.className = "pphoto";
+  if (p.선수ID) {
+    const exts = ["png", "jpg", "jpeg", "webp"];
+    let ei = 0;
+    const img = document.createElement("img");
+    img.alt = p.선수;
+    img.onerror = () => {
+      ei++;
+      if (ei < exts.length) { img.src = `../photo/face/${p.선수ID}.${exts[ei]}`; }
+      else { photo.innerHTML = `사진 없음<br><b>${p.선수ID}</b><br><span style="font-size:10px">photo/face/${p.선수ID}.png<br>(556×720)</span>`; }
+    };
+    img.src = `../photo/face/${p.선수ID}.${exts[0]}`;
+    photo.appendChild(img);
+  } else {
+    photo.textContent = "선수번호 없음";
+  }
+  pcard.appendChild(photo);
+  const pg = document.createElement("div");
+  pg.className = "grid";
+  // 선수번호: 생성 후 수정 불가 (읽기전용)
+  const idFld = makeField("선수번호 (수정불가)", p.선수ID, o.선수ID, () => {}, {});
+  const idInput = idFld.querySelector("input");
+  idInput.disabled = true;
+  idInput.style.cssText = "background:#f0f0f0; color:#333; font-weight:bold; letter-spacing:1px;";
+  pg.appendChild(idFld);
+  pg.appendChild(makeField("이름", p.선수, o.선수, v => set(["선수"], v), { changed: fieldChanged(i, ["선수"]) }));
+  pg.appendChild(makeField("팀 (소속 변경)", p.팀, o.팀, v => set(["팀"], v), { select: TEAMS, changed: fieldChanged(i, ["팀"]) }));
+  pg.appendChild(makeField("주포지션", p.주포지션, o.주포지션, v => set(["주포지션"], v), { select: POSITIONS, changed: fieldChanged(i, ["주포지션"]) }));
+  pg.appendChild(makeField("보조포지션", p.보조포지션, o.보조포지션, v => set(["보조포지션"], v), { select: ["", ...POSITIONS], changed: fieldChanged(i, ["보조포지션"]) }));
+  pg.appendChild(makeField("생년월일", p.생년월일, o.생년월일, v => set(["생년월일"], v), { date: true, changed: fieldChanged(i, ["생년월일"]) }));
+  pg.appendChild(makeField("첫번째 국적", p.국적1, o.국적1, v => set(["국적1"], v), { changed: fieldChanged(i, ["국적1"]) }));
+  pg.appendChild(makeField("두번째 국적", p.국적2, o.국적2, v => set(["국적2"], v), { changed: fieldChanged(i, ["국적2"]) }));
+  pg.appendChild(makeField("출생지", p.출생지, o.출생지, v => set(["출생지"], v), { changed: fieldChanged(i, ["출생지"]) }));
+  pg.appendChild(makeField("출신 대학", p["출신 대학"], o["출신 대학"], v => set(["출신 대학"], v), { changed: fieldChanged(i, ["출신 대학"]) }));
+  pg.appendChild(makeField("신장", p.신장, o.신장, v => set(["신장"], v), { number: true, min: 150, max: 230, unit: "cm", changed: fieldChanged(i, ["신장"]) }));
+  pg.appendChild(makeField("체중", p.체중, o.체중, v => set(["체중"], v), { number: true, min: 50, max: 160, unit: "kg", changed: fieldChanged(i, ["체중"]) }));
+  pg.appendChild(makeField("윙스팬", p.윙스팬, o.윙스팬, v => set(["윙스팬"], v), { number: true, min: 150, max: 240, unit: "cm", changed: fieldChanged(i, ["윙스팬"]) }));
+  pg.appendChild(makeField("연봉", p.연봉액, o.연봉액, v => set(["연봉액"], v === "" ? "" : parseInt(v)), { number: true, min: 0, max: 2000000000, moneyFmt: v => fmtMoney(v, current(i).연봉통화), changed: fieldChanged(i, ["연봉액"]) }));
+  pg.appendChild(makeField("연봉 통화", p.연봉통화, o.연봉통화, v => set(["연봉통화"], v), { select: ["원", "달러"], changed: fieldChanged(i, ["연봉통화"]) }));
+  pg.appendChild(makeField("계약 시작", p.계약시작, o.계약시작, v => set(["계약시작"], v), { date: true, changed: fieldChanged(i, ["계약시작"]) }));
+  pg.appendChild(makeField("계약 종료", p.계약종료, o.계약종료, v => set(["계약종료"], v), { date: true, changed: fieldChanged(i, ["계약종료"]) }));
+  pg.appendChild(makeField("병역", p.병역, o.병역, v => set(["병역"], v), { select: MILITARY_OPTS, changed: fieldChanged(i, ["병역"]) }));
+  pg.appendChild(makeField("등번호", p.등번호, o.등번호, v => set(["등번호"], v), { number: true, min: 0, max: 99, changed: fieldChanged(i, ["등번호"]) }));
+  pg.appendChild(makeField("주장", p.주장 === true, (o.주장 === true ? "주장" : ""), v => set(["주장"], v), { checkbox: true, changed: fieldChanged(i, ["주장"]) }));
+  pcard.appendChild(pg);
+  prof.appendChild(pcard);
+  pane.appendChild(prof);
+
+  // ── 능력치 (테마별) ──
+  const att = document.createElement("section");
+  att.className = "card";
+  att.innerHTML = "<h2>능력치 (수정 시 OVR 즉시 재계산)</h2>";
+  for (const group of ATTR_GROUPS) {
+    const g = document.createElement("div");
+    g.className = "attr-group";
+    const h3 = document.createElement("h3");
+    h3.textContent = group.title;
+    g.appendChild(h3);
+    const ag = document.createElement("div");
+    ag.className = "grid attrs";
+    for (const [key, label] of group.items) {
+      const wrap = document.createElement("div");
+      wrap.className = "fld" + (fieldChanged(i, ["능력치", key]) ? " changed" : "");
+      const lb = document.createElement("label");
+      lb.textContent = label;
+      wrap.appendChild(lb);
+      const row = document.createElement("div");
+      row.className = "attr-val";
+      const range = document.createElement("input");
+      range.type = "range"; range.min = 25; range.max = 99; range.value = p.능력치[key];
+      const num = document.createElement("input");
+      num.type = "number"; num.min = 25; num.max = 99; num.value = p.능력치[key];
+      const apply = (v) => {
+        if (String(v).trim() === "") { num.value = ""; range.value = 25; set(["능력치", key], null); return; }
+        v = Math.max(25, Math.min(99, parseInt(v) || 25));
+        range.value = v; num.value = v;
+        set(["능력치", key], v);
+      };
+      range.addEventListener("change", () => apply(range.value));
+      num.addEventListener("change", () => apply(num.value));
+      range.addEventListener("input", () => {
+        num.value = range.value;
+        const tmp = JSON.parse(JSON.stringify(p));
+        tmp.능력치[key] = parseInt(range.value);
+        const v2 = ovrFromStats(tmp);
+        document.getElementById("ovrVal").textContent = v2 == null ? "작업중" : v2;
+        document.getElementById("gradeVal").textContent = v2 == null ? "-" : grade(v2);
+      });
+      row.appendChild(range); row.appendChild(num);
+      wrap.appendChild(row);
+      const orig = document.createElement("span");
+      orig.className = "orig";
+      orig.textContent = `원본: ${o.능력치[key]}`;
+      wrap.appendChild(orig);
+      ag.appendChild(wrap);
+    }
+    g.appendChild(ag);
+    att.appendChild(g);
+  }
+  pane.appendChild(att);
+
+  // ── 히든 능력치 ──
+  const hid = document.createElement("section");
+  hid.className = "card";
+  hid.innerHTML = "<h2>히든 능력치 (빈값 입력 가능)</h2>";
+  const hg = document.createElement("div");
+  hg.className = "grid";
+  for (const k of HIDDEN_KEYS) {
+    hg.appendChild(makeField(k, p.히든[k], o.히든[k], v => set(["히든", k], v), { changed: fieldChanged(i, ["히든", k]) }));
+  }
+  hid.appendChild(hg);
+  pane.appendChild(hid);
+}
+
+// ===== 헤더 버튼 =====
+document.getElementById("searchBox").addEventListener("input", () => { renderSidebar(); if (viewMode === "table") renderTable(); });
+document.getElementById("btnTable").onclick = () => { viewMode = "table"; renderTable(); };
+document.getElementById("btnExport").onclick = () => {
+  const out = original.map((p, i) => {
+    const c = JSON.parse(JSON.stringify(current(i)));
+    c._idx = i;
+    c.OVR = ovrOf(i);
+    c.등급 = c.OVR == null ? "작업중" : grade(c.OVR);
+    // 엑셀 반영용 합성 필드 재구성
+    c.포지션 = c.보조포지션 ? `${c.주포지션}/${c.보조포지션}` : c.주포지션;
+    c.국적 = c.국적2 ? `${c.국적1}/${c.국적2}` : c.국적1;
+    c.계약기간 = (c.계약시작 && c.계약종료) ? `${c.계약시작.replace(/-/g, ".")} - ${c.계약종료.replace(/-/g, ".")}` : "";
+    c.연봉 = fmtMoney(c.연봉액, c.연봉통화);
+    c._수정됨 = !!edits[i];
+    return c;
+  });
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "kbl_players_edited.json";
+  a.click();
+};
+document.getElementById("btnImport").onclick = () => document.getElementById("importFile").click();
+document.getElementById("importFile").addEventListener("change", (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch (e) { alert("JSON 파일을 읽을 수 없습니다."); return; }
+    if (!Array.isArray(data)) { alert("형식이 올바르지 않습니다."); return; }
+    let count = 0;
+    data.forEach((item, arrIdx) => {
+      if (!item || !item._수정됨) return;
+      // 인덱스 우선, 없으면 배열 순서 (내보내기 순서 = 원본 순서)
+      let i = (typeof item._idx === "number") ? item._idx : arrIdx;
+      // 안전장치: 이름이 다르면 이름으로 재탐색
+      if (!original[i] || (original[i].선수 !== item.선수 && !edits[i])) {
+        const found = original.findIndex(o => o.선수 === item.선수);
+        if (found >= 0) i = found;
+      }
+      if (!original[i]) return;
+      const c = JSON.parse(JSON.stringify(item));
+      // 내보내기 때 추가된 파생 필드 제거
+      delete c._idx; delete c._수정됨; delete c.등급; delete c.포지션; delete c.국적; delete c.계약기간; delete c.연봉;
+      // 구버전 호환: 연봉원 -> 연봉액/통화
+      if (c.연봉원 !== undefined && c.연봉액 === undefined) { c.연봉액 = c.연봉원; c.연봉통화 = "원"; delete c.연봉원; }
+      // 선수번호는 수정불가: 항상 원본 값 유지
+      c.선수ID = original[i].선수ID;
+      if (c.연봉통화 === undefined) c.연봉통화 = (c.국적1 && c.국적1 !== "대한민국") ? "달러" : "원";
+      c.OVR = original[i].OVR;
+      edits[i] = c;
+      count++;
+    });
+    saveEdits(); renderSidebar(); renderEditor();
+    alert(`${count}명의 수정 내용을 불러왔습니다.`);
+    ev.target.value = "";
+  };
+  reader.readAsText(file, "utf-8");
+});
+document.getElementById("btnResetAll").onclick = () => {
+  if (confirm("모든 수정 내용을 버리고 원본으로 되돌립니다. 계속할까요?")) {
+    edits = {}; saveEdits(); renderSidebar(); renderEditor();
+  }
+};
+
+saveEdits();
+renderSidebar();
+
+
+</script>
+</body>
+</html>
